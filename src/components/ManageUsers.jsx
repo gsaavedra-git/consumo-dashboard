@@ -11,7 +11,7 @@ export default function ManageUsers() {
 
   const [form, setForm] = useState({
     email: '', password: '', display_name: '',
-    role: 'viewer', branch_id: '',
+    role: 'viewer', branch_ids: [],
   })
 
   useEffect(() => {
@@ -20,11 +20,22 @@ export default function ManageUsers() {
 
   async function loadData() {
     setLoading(true)
-    const [{ data: profiles }, { data: brs }] = await Promise.all([
-      supabase.from('profiles').select('*, branches(name)').order('role'),
+    const [{ data: profiles }, { data: brs }, { data: ub }] = await Promise.all([
+      supabase.from('profiles').select('*').order('role'),
       supabase.from('branches').select('id, name').order('name'),
+      supabase.from('user_branches').select('user_id, branch_id, branches(name)'),
     ])
-    setUsers(profiles || [])
+    // Attach branch info to each profile
+    const ubMap = {}
+    ;(ub || []).forEach(r => {
+      if (!ubMap[r.user_id]) ubMap[r.user_id] = []
+      ubMap[r.user_id].push(r)
+    })
+    const enriched = (profiles || []).map(p => ({
+      ...p,
+      user_branches: ubMap[p.id] || [],
+    }))
+    setUsers(enriched)
     setBranches(brs || [])
     setLoading(false)
   }
@@ -40,18 +51,31 @@ export default function ManageUsers() {
     setMessage(null)
 
     try {
-      const { data, error } = await supabase.rpc('create_app_user', {
-        p_email:        form.email,
-        p_password:     form.password,
-        p_display_name: form.display_name,
-        p_role:         form.role,
-        p_branch_id:    form.role === 'viewer' ? form.branch_id : null,
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: {
+          email:        form.email,
+          password:     form.password,
+          display_name: form.display_name,
+          role:         form.role,
+          branch_ids:   form.role === 'viewer' ? form.branch_ids : [],
+        }
       })
 
-      if (error) throw new Error(error.message)
+      if (error) {
+        let errorMsg = error.message
+        if (error.context) {
+          try {
+            const body = await error.context.json()
+            if (body && body.error) {
+              errorMsg = body.error
+            }
+          } catch (_) {}
+        }
+        throw new Error(errorMsg)
+      }
 
       setMessage({ type: 'success', text: `Usuario ${form.email} creado correctamente.` })
-      setForm({ email: '', password: '', display_name: '', role: 'viewer', branch_id: '' })
+      setForm({ email: '', password: '', display_name: '', role: 'viewer', branch_ids: [] })
       setShowForm(false)
       loadData()
     } catch (err) {
@@ -61,8 +85,12 @@ export default function ManageUsers() {
     }
   }
 
-  async function updateUserBranch(userId, branchId) {
-    await supabase.from('profiles').update({ branch_id: branchId || null }).eq('id', userId)
+  async function toggleUserBranch(userId, branchId, isChecked) {
+    if (isChecked) {
+      await supabase.from('user_branches').insert({ user_id: userId, branch_id: branchId })
+    } else {
+      await supabase.from('user_branches').delete().eq('user_id', userId).eq('branch_id', branchId)
+    }
     loadData()
   }
 
@@ -83,7 +111,7 @@ export default function ManageUsers() {
       {/* Create user button */}
       <div className="flex-between mb-5">
         <div className="text-muted text-sm">
-          💡 Los usuarios viewer solo ven datos de su sucursal asignada.
+          💡 Los usuarios viewer solo ven datos de sus sucursales asignadas.
         </div>
         <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
           {showForm ? 'Cancelar' : '+ Nuevo Usuario'}
@@ -138,20 +166,34 @@ export default function ManageUsers() {
               </div>
               {form.role === 'viewer' && (
                 <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                  <label>Sucursal asignada</label>
-                  <select name="branch_id" value={form.branch_id} onChange={handleFormChange} required>
-                    <option value="">— Seleccionar sucursal —</option>
+                  <label>Sucursales asignadas</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: 4 }}>
                     {branches.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
+                      <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
+                        <input
+                          type="checkbox"
+                          checked={form.branch_ids.includes(b.id)}
+                          onChange={e => {
+                            setForm(prev => ({
+                              ...prev,
+                              branch_ids: e.target.checked
+                                ? [...prev.branch_ids, b.id]
+                                : prev.branch_ids.filter(id => id !== b.id)
+                            }))
+                          }}
+                        />
+                        {b.name}
+                      </label>
                     ))}
-                  </select>
+                  </div>
+                  {branches.length === 0 && <span className="text-muted text-sm">No hay sucursales registradas.</span>}
                 </div>
               )}
             </div>
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={saving || (form.role === 'viewer' && !form.branch_id)}
+              disabled={saving || (form.role === 'viewer' && form.branch_ids.length === 0)}
             >
               {saving ? 'Creando...' : 'Crear Usuario'}
             </button>
@@ -193,17 +235,22 @@ export default function ManageUsers() {
                       {u.role === 'admin' ? (
                         <span className="text-muted text-sm">Acceso total</span>
                       ) : (
-                        <select
-                          className="form-select"
-                          style={{ maxWidth: 220 }}
-                          value={u.branch_id || ''}
-                          onChange={e => updateUserBranch(u.id, e.target.value)}
-                        >
-                          <option value="">Sin asignar</option>
-                          {branches.map(b => (
-                            <option key={b.id} value={b.id}>{b.name}</option>
-                          ))}
-                        </select>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+                          {branches.map(b => {
+                            const assigned = u.user_branches.some(ub => ub.branch_id === b.id)
+                            return (
+                              <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 13 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={assigned}
+                                  onChange={e => toggleUserBranch(u.id, b.id, e.target.checked)}
+                                />
+                                {b.name}
+                              </label>
+                            )
+                          })}
+                          {u.user_branches.length === 0 && <span className="text-muted text-sm">Sin asignar</span>}
+                        </div>
                       )}
                     </td>
                     <td>

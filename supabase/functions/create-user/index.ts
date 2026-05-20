@@ -55,7 +55,12 @@ Deno.serve(async (req) => {
     }
 
     // Crear el nuevo usuario
-    const { email, password, role, branch_id, display_name } = await req.json()
+    const { email, password, role, branch_id, branch_ids, display_name } = await req.json()
+
+    // Support both legacy branch_id and new branch_ids
+    const resolvedBranchIds: string[] = branch_ids?.length > 0
+      ? branch_ids
+      : (branch_id ? [branch_id] : [])
 
     if (!email || !password || !role) {
       return new Response(JSON.stringify({ error: 'Faltan campos requeridos' }), {
@@ -63,8 +68,8 @@ Deno.serve(async (req) => {
       })
     }
 
-    if (role === 'viewer' && !branch_id) {
-      return new Response(JSON.stringify({ error: 'Un viewer debe tener sucursal asignada' }), {
+    if (role === 'viewer' && resolvedBranchIds.length === 0) {
+      return new Response(JSON.stringify({ error: 'Un viewer debe tener al menos una sucursal asignada' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
@@ -82,11 +87,21 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Actualizar perfil con role y branch
+    // Actualizar perfil con role y display_name
     await supabaseAdmin
       .from('profiles')
-      .update({ role, branch_id: branch_id || null, display_name })
+      .update({ role, display_name })
       .eq('id', newUser.user.id)
+
+    // Insertar sucursales asignadas
+    if (resolvedBranchIds.length > 0) {
+      await supabaseAdmin.from('user_branches').insert(
+        resolvedBranchIds.map((bid: string) => ({
+          user_id: newUser.user.id,
+          branch_id: bid,
+        }))
+      )
+    }
 
     return new Response(JSON.stringify({ user: { id: newUser.user.id, email } }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

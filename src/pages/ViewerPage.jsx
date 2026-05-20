@@ -2,7 +2,8 @@ import { supabase } from '../lib/supabase'
 import ConsumptionDashboard from '../components/ConsumptionDashboard'
 
 export default function ViewerPage({ profile }) {
-  const branchName = profile?.branches?.name || 'Sucursal'
+  const branchNames = profile?.branch_names || []
+  const branchLabel = branchNames.length > 0 ? branchNames.join(', ') : 'Sin sucursal'
 
   return (
     <div className="app-layout">
@@ -11,7 +12,7 @@ export default function ViewerPage({ profile }) {
           <span>📊</span> Consumo Móvil
         </span>
         <div className="navbar-user">
-          <span>🏢 {branchName}</span>
+          <span>🏢 {branchLabel}</span>
           <button className="btn-logout" onClick={() => supabase.auth.signOut()}>
             Salir
           </button>
@@ -21,8 +22,8 @@ export default function ViewerPage({ profile }) {
       <div className="main-content">
         <ConsumptionDashboard
           isAdmin={false}
-          branchId={profile?.branch_id}
-          branchName={branchName}
+          branchIds={profile?.branch_ids || []}
+          branchName={branchLabel}
         />
       </div>
     </div>
