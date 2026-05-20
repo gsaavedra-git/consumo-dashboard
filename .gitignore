@@ -1,6 +1,6 @@
-echo node_modules/ > .gitignore
-echo dist/ >> .gitignore
-echo .env >> .gitignore
-echo .env.local >> .gitignore
-echo .env.*.local >> .gitignore
-echo *.log >> .gitignore
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+*.log
