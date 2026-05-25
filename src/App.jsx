@@ -37,13 +37,17 @@ export default function App() {
   async function fetchProfile(userId) {
     const [{ data: prof, error }, { data: ub }] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', userId).single(),
-      supabase.from('user_branches').select('branch_id, branches(name)').eq('user_id', userId),
+      supabase.from('user_branches').select('branch_id, branches(name, logo_url)').eq('user_id', userId),
     ])
 
     if (!error && prof) {
       prof.user_branches = ub || []
       prof.branch_ids = (ub || []).map(r => r.branch_id)
       prof.branch_names = (ub || []).map(r => r.branches?.name).filter(Boolean)
+      prof.branch_logos = (ub || []).reduce((acc, r) => {
+        if (r.branches?.name && r.branches?.logo_url) acc[r.branches.name] = r.branches.logo_url
+        return acc
+      }, {})
     }
     if (!error) setProfile(prof)
     setLoading(false)
@@ -52,6 +56,7 @@ export default function App() {
   if (loading) {
     return (
       <div className="loading-center">
+        <div className="loading-spinner" />
         <span>Cargando...</span>
       </div>
     )

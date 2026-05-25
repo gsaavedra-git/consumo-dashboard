@@ -7,6 +7,8 @@ import {
 } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { formatData } from '../lib/excelParser'
+import { IconWifi, IconPhone, IconMessage, IconActivity, IconArrowLeft, IconCalendar } from './Icons'
+import BranchLogo from './BranchLogo'
 
 const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
@@ -48,7 +50,7 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
     async function load() {
       let q = supabase
         .from('consumption_lines')
-        .select('*, branches(name)')
+        .select('*, branches(name, logo_url)')
         .eq('period_id', selectedId)
         .order('datos_mb', { ascending: false })
 
@@ -66,7 +68,7 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
     async function load() {
       let q = supabase
         .from('consumption_lines')
-        .select('datos_mb, voz_min, sms_count, periods(year, month), branches(name)')
+        .select('datos_mb, voz_min, sms_count, periods(year, month), branches(name, logo_url)')
 
       if (!isAdmin && filterIds.length > 0) q = q.in('branch_id', filterIds)
 
@@ -141,9 +143,17 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
     total:  drillLines.length,
   } : null
 
+  // Build a map of branch name → logo_url from lines data
+  const branchLogoMap = {}
+  lines.forEach(l => {
+    if (l.branches?.name && l.branches?.logo_url) {
+      branchLogoMap[l.branches.name] = l.branches.logo_url
+    }
+  })
+
   function handleBarClick(data) {
     if (multiBranch && !drillBranch && data?.name) {
-      setDrillBranch({ name: data.name })
+      setDrillBranch({ name: data.name, logoUrl: branchLogoMap[data.name] || null })
     }
   }
 
@@ -206,19 +216,31 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
           {/* KPIs */}
           <div className="kpi-grid">
             <div className="kpi-card blue">
-              <div className="kpi-label">Total Datos</div>
+              <div className="kpi-header">
+                <div className="kpi-label">Total Datos</div>
+                <div className="kpi-icon blue"><IconWifi size={20} /></div>
+              </div>
               <div className="kpi-value">{formatData(totalDatos)}</div>
             </div>
             <div className="kpi-card green">
-              <div className="kpi-label">Total Voz</div>
+              <div className="kpi-header">
+                <div className="kpi-label">Total Voz</div>
+                <div className="kpi-icon green"><IconPhone size={20} /></div>
+              </div>
               <div className="kpi-value">{totalVoz}<span className="kpi-unit">min</span></div>
             </div>
             <div className="kpi-card orange">
-              <div className="kpi-label">Total SMS</div>
+              <div className="kpi-header">
+                <div className="kpi-label">Total SMS</div>
+                <div className="kpi-icon orange"><IconMessage size={20} /></div>
+              </div>
               <div className="kpi-value">{totalSMS}</div>
             </div>
             <div className="kpi-card purple">
-              <div className="kpi-label">Líneas Activas</div>
+              <div className="kpi-header">
+                <div className="kpi-label">Líneas Activas</div>
+                <div className="kpi-icon purple"><IconActivity size={20} /></div>
+              </div>
               <div className="kpi-value">
                 {activeLines}
                 <span className="kpi-unit">/ {lines.length}</span>
@@ -231,27 +253,40 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
             <>
               <div className="card mb-5" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <button className="btn btn-secondary btn-sm" onClick={() => setDrillBranch(null)}>
-                  ← Volver
+                  <IconArrowLeft size={14} /> Volver
                 </button>
-                <span className="fw-600" style={{ fontSize: 16 }}>🏢 {drillBranch.name}</span>
+                <BranchLogo name={drillBranch.name} logoUrl={drillBranch.logoUrl} size={32} />
+                <span className="fw-600" style={{ fontSize: 16 }}>{drillBranch.name}</span>
                 <span className="text-muted text-sm">({drillKpis.total} líneas)</span>
               </div>
 
               <div className="kpi-grid">
                 <div className="kpi-card blue">
-                  <div className="kpi-label">Datos</div>
+                  <div className="kpi-header">
+                    <div className="kpi-label">Datos</div>
+                    <div className="kpi-icon blue"><IconWifi size={20} /></div>
+                  </div>
                   <div className="kpi-value">{formatData(drillKpis.datos)}</div>
                 </div>
                 <div className="kpi-card green">
-                  <div className="kpi-label">Voz</div>
+                  <div className="kpi-header">
+                    <div className="kpi-label">Voz</div>
+                    <div className="kpi-icon green"><IconPhone size={20} /></div>
+                  </div>
                   <div className="kpi-value">{drillKpis.voz}<span className="kpi-unit">min</span></div>
                 </div>
                 <div className="kpi-card orange">
-                  <div className="kpi-label">SMS</div>
+                  <div className="kpi-header">
+                    <div className="kpi-label">SMS</div>
+                    <div className="kpi-icon orange"><IconMessage size={20} /></div>
+                  </div>
                   <div className="kpi-value">{drillKpis.sms}</div>
                 </div>
                 <div className="kpi-card purple">
-                  <div className="kpi-label">Líneas Activas</div>
+                  <div className="kpi-header">
+                    <div className="kpi-label">Líneas Activas</div>
+                    <div className="kpi-icon purple"><IconActivity size={20} /></div>
+                  </div>
                   <div className="kpi-value">{drillKpis.active}<span className="kpi-unit">/ {drillKpis.total}</span></div>
                 </div>
               </div>
@@ -379,7 +414,14 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                           <tr key={l.id}>
                             <td className="mono">{l.linea}</td>
                             <td>{l.alias || <span className="text-muted">—</span>}</td>
-                            {multiBranch && <td>{l.branches?.name || '—'}</td>}
+                            {multiBranch && (
+                              <td>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                  <BranchLogo name={l.branches?.name || '—'} logoUrl={l.branches?.logo_url} size={24} style={{ borderRadius: 5 }} />
+                                  {l.branches?.name || '—'}
+                                </span>
+                              </td>
+                            )}
                             <td className="text-muted text-sm">{l.desc_plan}</td>
                             <td style={{ fontWeight: l.datos_mb > 0 ? 600 : 400, color: l.datos_mb > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
                               {formatData(l.datos_mb)}
@@ -410,15 +452,24 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
           {/* Historical KPIs */}
           <div className="kpi-grid">
             <div className="kpi-card blue">
-              <div className="kpi-label">Períodos Registrados</div>
+              <div className="kpi-header">
+                <div className="kpi-label">Períodos Registrados</div>
+                <div className="kpi-icon blue"><IconCalendar size={20} /></div>
+              </div>
               <div className="kpi-value">{historical.length}</div>
             </div>
             <div className="kpi-card green">
-              <div className="kpi-label">Datos Acumulados</div>
+              <div className="kpi-header">
+                <div className="kpi-label">Datos Acumulados</div>
+                <div className="kpi-icon green"><IconWifi size={20} /></div>
+              </div>
               <div className="kpi-value">{formatData(historical.reduce((s, d) => s + d.datos_mb, 0))}</div>
             </div>
             <div className="kpi-card orange">
-              <div className="kpi-label">Voz Acumulada</div>
+              <div className="kpi-header">
+                <div className="kpi-label">Voz Acumulada</div>
+                <div className="kpi-icon orange"><IconPhone size={20} /></div>
+              </div>
               <div className="kpi-value">
                 {historical.reduce((s, d) => s + d.voz_min, 0)}
                 <span className="kpi-unit">min</span>

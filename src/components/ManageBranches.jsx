@@ -1,12 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import BranchLogo from './BranchLogo'
+import { IconUpload } from './Icons'
 
 export default function ManageBranches() {
   const [branches, setBranches] = useState([])
   const [newName, setNewName]   = useState('')
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
+  const [uploading, setUploading] = useState(null) // branch id being uploaded
   const [message, setMessage]   = useState(null)
+  const fileRef = useRef(null)
+  const uploadBranchRef = useRef(null)
 
   useEffect(() => { load() }, [])
 
@@ -14,7 +19,7 @@ export default function ManageBranches() {
     setLoading(true)
     const { data } = await supabase
       .from('branches')
-      .select('id, name, created_at')
+      .select('id, name, logo_url, created_at')
       .order('name')
     setBranches(data || [])
     setLoading(false)
@@ -43,6 +48,93 @@ export default function ManageBranches() {
     setSaving(false)
   }
 
+  function triggerUpload(branch) {
+    uploadBranchRef.current = branch
+    fileRef.current?.click()
+  }
+
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0]
+    if (!file || !uploadBranchRef.current) return
+
+    const branch = uploadBranchRef.current
+    const maxSize = 2 * 1024 * 1024 // 2MB
+    if (file.size > maxSize) {
+      setMessage({ type: 'error', text: 'El logo debe pesar menos de 2 MB.' })
+      e.target.value = ''
+      return
+    }
+
+    const validTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']
+    if (!validTypes.includes(file.type)) {
+      setMessage({ type: 'error', text: 'Formato no válido. Usa PNG, JPG, WebP o SVG.' })
+      e.target.value = ''
+      return
+    }
+
+    setUploading(branch.id)
+    setMessage(null)
+
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `${branch.id}.${ext}`
+
+      // Upload (upsert)
+      const { error: uploadErr } = await supabase.storage
+        .from('branch-logos')
+        .upload(path, file, { upsert: true })
+
+      if (uploadErr) throw uploadErr
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('branch-logos')
+        .getPublicUrl(path)
+
+      // Add cache-buster so browser reloads the image
+      const logoUrl = `${publicUrl}?t=${Date.now()}`
+
+      // Update branch record
+      const { error: updateErr } = await supabase
+        .from('branches')
+        .update({ logo_url: logoUrl })
+        .eq('id', branch.id)
+
+      if (updateErr) throw updateErr
+
+      setMessage({ type: 'success', text: `Logo de "${branch.name}" actualizado.` })
+      load()
+    } catch (err) {
+      setMessage({ type: 'error', text: `Error subiendo logo: ${err.message}` })
+    } finally {
+      setUploading(null)
+      e.target.value = ''
+    }
+  }
+
+  async function removeLogo(branch) {
+    setUploading(branch.id)
+    try {
+      // Try to remove from storage (best effort, file name might vary)
+      const extensions = ['png', 'jpg', 'jpeg', 'webp', 'svg']
+      await supabase.storage
+        .from('branch-logos')
+        .remove(extensions.map(ext => `${branch.id}.${ext}`))
+
+      await supabase
+        .from('branches')
+        .update({ logo_url: null })
+        .eq('id', branch.id)
+
+      setMessage({ type: 'success', text: `Logo de "${branch.name}" eliminado.` })
+      load()
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message })
+    } finally {
+      setUploading(null)
+    }
+  }
+
   return (
     <div>
       <div className="page-title">Sucursales</div>
@@ -53,6 +145,15 @@ export default function ManageBranches() {
       {message && (
         <div className={`alert alert-${message.type}`}>{message.text}</div>
       )}
+
+      {/* Hidden file input */}
+      <input
+        type="file"
+        ref={fileRef}
+        onChange={handleFileChange}
+        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+        style={{ display: 'none' }}
+      />
 
       {/* Add form */}
       <div className="card mb-5">
@@ -87,18 +188,43 @@ export default function ManageBranches() {
             <table>
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>Logo</th>
                   <th>Nombre</th>
                   <th>Registrada</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {branches.map((b, i) => (
+                {branches.map(b => (
                   <tr key={b.id}>
-                    <td className="text-muted">{i + 1}</td>
-                    <td><span style={{ fontSize: 15 }}>🏢</span> <strong>{b.name}</strong></td>
+                    <td style={{ width: 60 }}>
+                      <BranchLogo name={b.name} logoUrl={b.logo_url} size={40} />
+                    </td>
+                    <td><strong>{b.name}</strong></td>
                     <td className="text-muted text-sm">
                       {new Date(b.created_at).toLocaleDateString('es-CL')}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => triggerUpload(b)}
+                          disabled={uploading === b.id}
+                        >
+                          <IconUpload size={14} />
+                          {uploading === b.id ? 'Subiendo...' : b.logo_url ? 'Cambiar logo' : 'Subir logo'}
+                        </button>
+                        {b.logo_url && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => removeLogo(b)}
+                            disabled={uploading === b.id}
+                            style={{ color: 'var(--danger)' }}
+                          >
+                            Quitar
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

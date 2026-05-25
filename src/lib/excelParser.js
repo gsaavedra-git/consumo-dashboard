@@ -1,9 +1,10 @@
 import * as XLSX from 'xlsx'
 
-// "1.3 GB" / "512 MB" / "0 KB" → MB como float
+// "1.3 GB" o "1,5 GB" / "512 MB" / "0 KB" → MB como float
 export function parseTraficoData(str) {
   if (!str || str.trim() === '') return 0
-  const match = String(str).match(/([\d.]+)\s*(GB|MB|KB)/i)
+  const cleanStr = String(str).replace(',', '.')
+  const match = cleanStr.match(/([\d.]+)\s*(GB|MB|KB)/i)
   if (!match) return 0
   const val = parseFloat(match[1])
   const unit = match[2].toUpperCase()

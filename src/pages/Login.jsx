@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { IconSignal } from '../components/Icons'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -18,13 +19,16 @@ export default function Login() {
       setError('Email o contraseña incorrectos.')
       setLoading(false)
     }
-    // Si no hay error, el onAuthStateChange en App.jsx maneja la redirección
   }
 
   return (
     <div className="login-container">
       <div className="login-card">
-        <div className="login-logo">📊</div>
+        <div className="login-logo">
+          <div className="login-logo-icon">
+            <IconSignal size={28} />
+          </div>
+        </div>
         <div className="login-title">Consumo Móvil</div>
         <div className="login-sub">Ingresa con tu cuenta asignada</div>
 
@@ -57,7 +61,7 @@ export default function Login() {
             type="submit"
             className="btn btn-primary"
             disabled={loading}
-            style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}
+            style={{ width: '100%', justifyContent: 'center', marginTop: 8, padding: '11px 18px' }}
           >
             {loading ? 'Ingresando...' : 'Ingresar'}
           </button>
