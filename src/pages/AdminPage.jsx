@@ -27,7 +27,7 @@ export default function AdminPage({ profile }) {
           <span className="badge badge-admin">Admin</span>
           <button className="btn-logout" onClick={() => supabase.auth.signOut()}>
             <IconLogOut size={15} />
-            Salir
+            <span className="logout-text">Salir</span>
           </button>
         </div>
       </nav>

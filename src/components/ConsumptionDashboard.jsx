@@ -342,6 +342,31 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                     </tbody>
                   </table>
                 </div>
+                {/* Mobile card list */}
+                <div className="mobile-card-list">
+                  {drillLines.map(l => (
+                    <div className="mobile-card-item" key={l.id}>
+                      <div style={{ marginBottom: 8 }}>
+                        <div className="fw-600" style={{ fontSize: 14 }}>{l.alias || l.linea}</div>
+                        {l.alias && <div className="mono" style={{ marginTop: 2 }}>{l.linea}</div>}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, background: 'var(--bg)', borderRadius: 8, padding: '10px 12px' }}>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Datos</div>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: l.datos_mb > 0 ? 'var(--primary)' : 'var(--text-muted)' }}>{formatData(l.datos_mb)}</div>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Voz</div>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: l.voz_min > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{l.voz_min > 0 ? `${l.voz_min}m` : '0'}</div>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>SMS</div>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: l.sms_count > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>{l.sms_count}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </>
           )}
@@ -396,47 +421,83 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                     No hay datos para este período.
                   </div>
                 ) : (
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Línea</th>
-                          <th>Alias</th>
-                          {multiBranch && <th>Sucursal</th>}
-                          <th>Plan</th>
-                          <th>Datos</th>
-                          <th>Voz</th>
-                          <th>SMS</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {lines.map(l => (
-                          <tr key={l.id}>
-                            <td className="mono">{l.linea}</td>
-                            <td>{l.alias || <span className="text-muted">—</span>}</td>
-                            {multiBranch && (
-                              <td>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                  <BranchLogo name={l.branches?.name || '—'} logoUrl={l.branches?.logo_url} size={24} style={{ borderRadius: 5 }} />
-                                  {l.branches?.name || '—'}
-                                </span>
-                              </td>
-                            )}
-                            <td className="text-muted text-sm">{l.desc_plan}</td>
-                            <td style={{ fontWeight: l.datos_mb > 0 ? 600 : 400, color: l.datos_mb > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
-                              {formatData(l.datos_mb)}
-                            </td>
-                            <td style={{ color: l.voz_min > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
-                              {l.voz_min > 0 ? `${l.voz_min} min` : '0'}
-                            </td>
-                            <td style={{ color: l.sms_count > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
-                              {l.sms_count}
-                            </td>
+                  <>
+                    {/* Desktop table */}
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Línea</th>
+                            <th>Alias</th>
+                            {multiBranch && <th>Sucursal</th>}
+                            <th>Plan</th>
+                            <th>Datos</th>
+                            <th>Voz</th>
+                            <th>SMS</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {lines.map(l => (
+                            <tr key={l.id}>
+                              <td className="mono">{l.linea}</td>
+                              <td>{l.alias || <span className="text-muted">—</span>}</td>
+                              {multiBranch && (
+                                <td>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                    <BranchLogo name={l.branches?.name || '—'} logoUrl={l.branches?.logo_url} size={24} style={{ borderRadius: 5 }} />
+                                    {l.branches?.name || '—'}
+                                  </span>
+                                </td>
+                              )}
+                              <td className="text-muted text-sm">{l.desc_plan}</td>
+                              <td style={{ fontWeight: l.datos_mb > 0 ? 600 : 400, color: l.datos_mb > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
+                                {formatData(l.datos_mb)}
+                              </td>
+                              <td style={{ color: l.voz_min > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
+                                {l.voz_min > 0 ? `${l.voz_min} min` : '0'}
+                              </td>
+                              <td style={{ color: l.sms_count > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
+                                {l.sms_count}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {/* Mobile card list */}
+                    <div className="mobile-card-list">
+                      {lines.map(l => (
+                        <div className="mobile-card-item" key={l.id}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <div>
+                              <div className="fw-600" style={{ fontSize: 14 }}>{l.alias || l.linea}</div>
+                              {l.alias && <div className="mono" style={{ marginTop: 2 }}>{l.linea}</div>}
+                            </div>
+                            {multiBranch && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-muted)' }}>
+                                <BranchLogo name={l.branches?.name || '—'} logoUrl={l.branches?.logo_url} size={20} style={{ borderRadius: 4 }} />
+                                {l.branches?.name}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, background: 'var(--bg)', borderRadius: 8, padding: '10px 12px' }}>
+                            <div style={{ textAlign: 'center' }}>
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Datos</div>
+                              <div style={{ fontSize: 15, fontWeight: 600, color: l.datos_mb > 0 ? 'var(--primary)' : 'var(--text-muted)' }}>{formatData(l.datos_mb)}</div>
+                            </div>
+                            <div style={{ textAlign: 'center' }}>
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Voz</div>
+                              <div style={{ fontSize: 15, fontWeight: 600, color: l.voz_min > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{l.voz_min > 0 ? `${l.voz_min}m` : '0'}</div>
+                            </div>
+                            <div style={{ textAlign: 'center' }}>
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>SMS</div>
+                              <div style={{ fontSize: 15, fontWeight: 600, color: l.sms_count > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>{l.sms_count}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
             </>
@@ -552,6 +613,28 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                       ))}
                     </tbody>
                   </table>
+                </div>
+                {/* Mobile card list */}
+                <div className="mobile-card-list">
+                  {[...historical].reverse().map(d => (
+                    <div className="mobile-card-item" key={d.key}>
+                      <div className="fw-600" style={{ fontSize: 14, marginBottom: 8 }}>{d.label}</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, background: 'var(--bg)', borderRadius: 8, padding: '10px 12px' }}>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Datos</div>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--primary)' }}>{formatData(d.datos_mb)}</div>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Voz</div>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--success)' }}>{d.voz_min}m</div>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>SMS</div>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--warning)' }}>{d.sms_count}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </>

@@ -123,7 +123,7 @@ export default function ManageUsers() {
         <div className="card mb-5">
           <div className="fw-600 mb-4">Crear nuevo usuario</div>
           <form onSubmit={handleCreate}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16 }}>
               <div className="form-group">
                 <label>Nombre / Descripción</label>
                 <input
@@ -212,6 +212,8 @@ export default function ManageUsers() {
             No hay usuarios registrados aún.
           </div>
         ) : (
+          <>
+          {/* Desktop table */}
           <div className="table-wrap">
             <table>
               <thead>
@@ -275,6 +277,66 @@ export default function ManageUsers() {
               </tbody>
             </table>
           </div>
+
+          {/* Mobile card list */}
+          <div className="mobile-card-list">
+            {users.map(u => (
+              <div className="mobile-card-item" key={u.id}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div className="fw-600" style={{ fontSize: 15 }}>{u.display_name || '—'}</div>
+                  <span className={`badge badge-${u.role}`}>{u.role}</span>
+                </div>
+
+                {u.role === 'admin' ? (
+                  <div className="text-muted text-sm" style={{ marginBottom: 10 }}>Acceso total a todas las sucursales</div>
+                ) : (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600, marginBottom: 6 }}>Sucursales</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px' }}>
+                      {branches.map(b => {
+                        const assigned = u.user_branches.some(ub => ub.branch_id === b.id)
+                        return (
+                          <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, minHeight: 32 }}>
+                            <input
+                              type="checkbox"
+                              checked={assigned}
+                              onChange={e => toggleUserBranch(u.id, b.id, e.target.checked)}
+                              style={{ width: 18, height: 18 }}
+                            />
+                            {b.name}
+                          </label>
+                        )
+                      })}
+                      {u.user_branches.length === 0 && branches.length === 0 && (
+                        <span className="text-muted text-sm">Sin sucursales disponibles</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  {u.role === 'viewer' ? (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => updateUserRole(u.id, 'admin')}
+                      style={{ width: '100%', justifyContent: 'center' }}
+                    >
+                      Hacer admin
+                    </button>
+                  ) : (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => updateUserRole(u.id, 'viewer')}
+                      style={{ width: '100%', justifyContent: 'center' }}
+                    >
+                      Hacer viewer
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          </>
         )}
       </div>
 

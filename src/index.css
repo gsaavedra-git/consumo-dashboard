@@ -511,14 +511,166 @@ tr:hover td { background: var(--bg); }
   cursor: pointer;
 }
 
-/* ── Responsive ───────────────────────────── */
+/* ── Mobile card list (replaces tables on mobile) ── */
+.mobile-card-list { display: none; }
+.mobile-card-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 10px;
+}
+.mobile-card-item:last-child { margin-bottom: 0; }
+.mobile-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.mobile-card-row .mobile-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  font-weight: 600;
+}
+.mobile-card-row .mobile-value {
+  font-weight: 500;
+  text-align: right;
+}
+
+/* ── Responsive: Tablet ──────────────────── */
 @media (max-width: 768px) {
   .navbar { padding: 0 16px; height: 56px; }
+  .navbar-brand { font-size: 16px; gap: 8px; }
+  .navbar-brand svg { width: 18px; height: 18px; }
+
   .main-content { padding: 16px; }
-  .kpi-grid     { grid-template-columns: 1fr 1fr; }
-  .login-card   { width: 100%; margin: 16px; padding: 36px 28px; border-radius: 16px; }
-  .tabs         { overflow-x: auto; width: 100%; }
+
+  .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kpi-card { padding: 16px 16px 14px; }
+  .kpi-value { font-size: 24px; }
+  .kpi-icon { width: 32px; height: 32px; border-radius: 8px; }
+  .kpi-icon svg { width: 16px; height: 16px; }
+
+  .login-card {
+    width: calc(100% - 32px);
+    max-width: 400px;
+    margin: 16px;
+    padding: 36px 28px;
+    border-radius: 16px;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    width: 100%;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+
+  .page-title { font-size: 20px; }
+  .page-subtitle { font-size: 13px; }
+
+  .chart-card { padding: 16px; }
+  .chart-title { font-size: 14px; }
+
+  .card { padding: 16px; border-radius: var(--radius); }
 }
+
+/* ── Responsive: Mobile ──────────────────── */
 @media (max-width: 480px) {
-  .kpi-grid { grid-template-columns: 1fr; }
+  /* Prevent iOS zoom on input focus */
+  .form-group input, .form-group select,
+  .form-input, .form-select,
+  .period-bar select {
+    font-size: 16px;
+  }
+
+  .navbar { padding: 0 12px; height: 52px; }
+  .navbar-brand { font-size: 15px; }
+  .navbar-user { gap: 8px; }
+  .navbar-user-info { font-size: 12px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .btn-logout { padding: 6px 10px; font-size: 12px; }
+  .btn-logout span,
+  .btn-logout .logout-text { display: none; }
+
+  .main-content { padding: 12px; }
+
+  /* Page header stacks vertically */
+  .flex-between {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .page-title { font-size: 18px; }
+  .page-subtitle { font-size: 12px; margin-bottom: 16px; }
+
+  /* KPIs: 2 columns with compact sizing */
+  .kpi-grid { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .kpi-card { padding: 14px 12px 12px; }
+  .kpi-header { margin-bottom: 6px; }
+  .kpi-label { font-size: 10px; letter-spacing: .4px; }
+  .kpi-value { font-size: 22px; }
+  .kpi-unit { font-size: 12px; }
+  .kpi-icon { width: 28px; height: 28px; border-radius: 6px; }
+  .kpi-icon svg { width: 14px; height: 14px; }
+
+  /* Tabs: icon-only on very small screens */
+  .tabs { padding: 3px; gap: 2px; }
+  .tab-btn { padding: 8px 14px; font-size: 12px; gap: 5px; }
+
+  /* Period selector compact */
+  .period-bar { gap: 8px; }
+  .period-bar label { font-size: 12px; }
+
+  /* Cards compact */
+  .card { padding: 14px; }
+  .chart-card { padding: 14px; margin-bottom: 12px; }
+
+  /* Tables: hide on mobile, show card list */
+  .table-wrap { display: none; }
+  .mobile-card-list { display: block; }
+
+  /* Buttons: larger touch targets */
+  .btn { padding: 10px 16px; min-height: 44px; font-size: 14px; }
+  .btn-sm { padding: 8px 12px; min-height: 36px; font-size: 13px; }
+
+  /* Alerts compact */
+  .alert { font-size: 12px; padding: 10px 12px; }
+
+  /* Upload area */
+  .upload-area { padding: 36px 16px; }
+  .upload-icon { font-size: 36px; }
+
+  /* Form grids collapse */
+  .form-group input, .form-group select { padding: 12px 14px; }
+  .mobile-stack-form { flex-direction: column !important; }
+  .mobile-stack-form .btn { width: 100%; justify-content: center; }
+
+  /* Empty state compact */
+  .empty-state { padding: 36px 16px; }
+
+  /* Badge */
+  .badge { font-size: 10px; padding: 3px 8px; }
+
+  /* Login adjustments */
+  .login-card { padding: 32px 24px; }
+  .login-logo-icon { width: 48px; height: 48px; border-radius: 14px; }
+  .login-logo-icon svg { width: 24px; height: 24px; }
+  .login-title { font-size: 20px; }
+  .login-sub { font-size: 13px; margin-bottom: 24px; }
+}
+
+/* ── Safe area (notch phones) ────────────── */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .navbar {
+    padding-top: env(safe-area-inset-top);
+    height: calc(56px + env(safe-area-inset-top));
+  }
+  .main-content {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }

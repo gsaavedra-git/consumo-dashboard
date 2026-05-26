@@ -158,7 +158,7 @@ export default function ManageBranches() {
       {/* Add form */}
       <div className="card mb-5">
         <div className="fw-600 mb-3">Agregar sucursal manualmente</div>
-        <form onSubmit={handleAdd} style={{ display: 'flex', gap: 12 }}>
+        <form onSubmit={handleAdd} className="mobile-stack-form" style={{ display: 'flex', gap: 12 }}>
           <input
             className="form-input"
             value={newName}
@@ -184,6 +184,8 @@ export default function ManageBranches() {
             Se crean automáticamente al subir el primer Excel.
           </div>
         ) : (
+          <>
+          {/* Desktop table */}
           <div className="table-wrap">
             <table>
               <thead>
@@ -231,6 +233,45 @@ export default function ManageBranches() {
               </tbody>
             </table>
           </div>
+
+          {/* Mobile card list */}
+          <div className="mobile-card-list">
+            {branches.map(b => (
+              <div className="mobile-card-item" key={b.id}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                  <BranchLogo name={b.name} logoUrl={b.logo_url} size={44} />
+                  <div>
+                    <div className="fw-600" style={{ fontSize: 15 }}>{b.name}</div>
+                    <div className="text-muted text-sm">
+                      Registrada {new Date(b.created_at).toLocaleDateString('es-CL')}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => triggerUpload(b)}
+                    disabled={uploading === b.id}
+                    style={{ flex: 1, justifyContent: 'center' }}
+                  >
+                    <IconUpload size={14} />
+                    {uploading === b.id ? 'Subiendo...' : b.logo_url ? 'Cambiar logo' : 'Subir logo'}
+                  </button>
+                  {b.logo_url && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => removeLogo(b)}
+                      disabled={uploading === b.id}
+                      style={{ color: 'var(--danger)' }}
+                    >
+                      Quitar
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          </>
         )}
       </div>
     </div>
