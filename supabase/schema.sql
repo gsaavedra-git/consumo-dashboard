@@ -7,6 +7,7 @@
 CREATE TABLE public.branches (
   id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name        TEXT NOT NULL UNIQUE,
+  logo_url    TEXT,
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -43,7 +44,15 @@ CREATE TABLE public.profiles (
   display_name  TEXT
 );
 
--- 5. TRIGGER: crear perfil automáticamente al registrar usuario
+-- 5. RELACIÓN USUARIO-SUCURSALES (multi-branch para viewers)
+CREATE TABLE public.user_branches (
+  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id    UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  branch_id  UUID NOT NULL REFERENCES public.branches(id) ON DELETE CASCADE,
+  UNIQUE(user_id, branch_id)
+);
+
+-- 6. TRIGGER: crear perfil automáticamente al registrar usuario
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -62,10 +71,11 @@ CREATE TRIGGER on_auth_user_created
 -- ROW LEVEL SECURITY
 -- =====================================================
 
-ALTER TABLE public.branches         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.periods          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.branches          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.periods           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.consumption_lines ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.profiles         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_branches     ENABLE ROW LEVEL SECURITY;
 
 -- BRANCHES: todos leen, solo admin escribe
 CREATE POLICY "branches_select" ON public.branches
@@ -85,20 +95,28 @@ CREATE POLICY "periods_admin_all" ON public.periods
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
   );
 
--- CONSUMPTION_LINES: admin ve todo, viewer solo su sucursal
+-- CONSUMPTION_LINES: admin ve todo, viewer solo sus sucursales asignadas
 CREATE POLICY "lines_admin_all" ON public.consumption_lines
   FOR ALL USING (
     EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
   );
 
-CREATE POLICY "lines_viewer_own_branch" ON public.consumption_lines
+CREATE POLICY "lines_viewer_own_branches" ON public.consumption_lines
   FOR SELECT USING (
     EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE id = auth.uid()
-        AND role = 'viewer'
+      SELECT 1 FROM public.user_branches
+      WHERE user_id = auth.uid()
         AND branch_id = consumption_lines.branch_id
     )
+  );
+
+-- USER_BRANCHES: cada usuario ve las suyas, admin gestiona todas
+CREATE POLICY "user_branches_own_select" ON public.user_branches
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "user_branches_admin_all" ON public.user_branches
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
   );
 
 -- PROFILES: cada usuario ve el suyo, admin ve todos
@@ -114,9 +132,17 @@ CREATE POLICY "profiles_admin_all" ON public.profiles
 -- ÍNDICES (performance)
 -- =====================================================
 
-CREATE INDEX idx_lines_period    ON public.consumption_lines(period_id);
-CREATE INDEX idx_lines_branch    ON public.consumption_lines(branch_id);
+CREATE INDEX idx_lines_period       ON public.consumption_lines(period_id);
+CREATE INDEX idx_lines_branch       ON public.consumption_lines(branch_id);
 CREATE INDEX idx_periods_year_month ON public.periods(year, month);
+CREATE INDEX idx_user_branches_user ON public.user_branches(user_id);
+
+-- =====================================================
+-- STORAGE: bucket para logos de sucursales
+-- Crear manualmente en Supabase Dashboard → Storage:
+--   Nombre: branch-logos
+--   Public: true
+-- =====================================================
 
 -- =====================================================
 -- DATOS INICIALES: crear usuario administrador

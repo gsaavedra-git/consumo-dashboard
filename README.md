@@ -9,7 +9,7 @@ Dashboard para visualizar el consumo mensual de líneas móviles corporativas, c
 | Frontend | React + Vite |
 | Backend / DB | Supabase (PostgreSQL + Auth + RLS) |
 | Hosting | Vercel (frontend) + Supabase cloud |
-| Charts | Recharts |
+| Charts | Recharts (AreaChart + BarChart) |
 | Excel parsing | SheetJS (xlsx) |
 
 ---
@@ -30,6 +30,13 @@ supabase/schema.sql
 ```
 
 Esto crea las tablas, las políticas RLS y los índices.
+
+### 2b. Supabase — Crear bucket de logos
+
+En el Dashboard → **Storage** → "New bucket":
+
+- Nombre: `branch-logos`
+- Public: ✅
 
 ### 3. Supabase — Crear primer usuario administrador
 
@@ -104,7 +111,7 @@ O conecta el repositorio en [vercel.com](https://vercel.com) y configura las var
 ### Sucursales (viewers)
 
 1. Ingresar con la cuenta genérica de su sucursal
-2. Ver dashboard propio con datos del período actual
+2. Ver dashboard propio con datos del período actual (un viewer puede tener múltiples sucursales asignadas)
 3. Navegar al histórico para ver evolución mes a mes
 
 ---
@@ -122,10 +129,12 @@ consumo-dashboard/
 │   │   ├── AdminPage.jsx
 │   │   └── ViewerPage.jsx
 │   ├── components/
-│   │   ├── ConsumptionDashboard.jsx  ← gráficos + tabla
+│   │   ├── ConsumptionDashboard.jsx  ← gráficos (AreaChart/BarChart) + tabla
 │   │   ├── UploadExcel.jsx           ← carga mensual
-│   │   ├── ManageBranches.jsx        ← CRUD sucursales
-│   │   └── ManageUsers.jsx           ← CRUD usuarios
+│   │   ├── ManageBranches.jsx        ← CRUD sucursales + logos
+│   │   ├── ManageUsers.jsx           ← CRUD usuarios (multi-branch)
+│   │   ├── BranchLogo.jsx            ← avatar/logo de sucursal
+│   │   └── Icons.jsx                 ← iconos SVG del dashboard
 │   ├── App.jsx                ← routing por rol
 │   ├── main.jsx
 │   └── index.css
@@ -134,6 +143,9 @@ consumo-dashboard/
 │   └── functions/
 │       └── create-user/
 │           └── index.ts       ← Edge Function para crear usuarios
+├── .github/
+│   └── workflows/
+│       └── keep-supabase-alive.yml  ← ping periódico para evitar pausa
 ├── .env.example
 ├── vite.config.js
 └── package.json
@@ -146,3 +158,6 @@ consumo-dashboard/
 - **Row Level Security**: habilitado en todas las tablas. Un viewer no puede ver datos de otra sucursal, ni siquiera directamente contra la API.
 - **Reemplazo de datos**: subir datos de un período ya existente reemplaza los anteriores (no duplica).
 - **Sucursales automáticas**: al subir un Excel, las sucursales nuevas se crean automáticamente a partir del campo "Alias" (se elimina el número final: "Alto Bio Bio 1" → "Alto Bio Bio").
+- **Multi-branch**: un usuario viewer puede tener múltiples sucursales asignadas vía la tabla `user_branches`.
+- **Logos de sucursal**: se pueden subir desde la sección Sucursales. Se almacenan en el bucket `branch-logos` de Supabase Storage.
+- **Keep-alive**: un GitHub Action hace ping periódico a Supabase para evitar que el proyecto free-tier entre en pausa.

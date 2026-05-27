@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   ResponsiveContainer,
   BarChart, Bar,
-  LineChart, Line,
+  AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
 import { supabase } from '../lib/supabase'
@@ -13,6 +13,29 @@ import BranchLogo from './BranchLogo'
 const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
 const COLORS = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#65a30d']
+
+function CustomTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  return (
+    <div style={{
+      background: 'var(--surface)', border: '1px solid var(--border)',
+      borderRadius: 10, padding: '10px 14px', boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
+      fontSize: 13,
+    }}>
+      <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>{label}</div>
+      {payload.map((p, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: p.color, display: 'inline-block' }} />
+          <span style={{ color: 'var(--text-muted)' }}>{p.name}:</span>
+          <span style={{ fontWeight: 600, color: 'var(--text)' }}>
+            {p.dataKey === 'datos_mb' ? formatData(p.value) : p.dataKey === 'voz_min' ? `${p.value} min` : p.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 
 export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId, branchName }) {
   // Support both legacy single branchId and new branchIds array
@@ -294,15 +317,15 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
               {drillBarData.length > 0 && (
                 <div className="chart-card">
                   <div className="chart-title">Consumo por Línea — {drillBranch.name}</div>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={drillBarData} margin={{ top: 5, right: 20, bottom: 56, left: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f8" />
-                      <XAxis dataKey="name" angle={-35} textAnchor="end" tick={{ fontSize: 12 }} interval={0} />
-                      <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${v} MB`} />
-                      <Tooltip formatter={(val, name) => name === 'datos_mb' ? [formatData(val), 'Datos'] : [`${val} min`, 'Voz']} />
-                      <Legend wrapperStyle={{ paddingTop: 16 }} />
-                      <Bar dataKey="datos_mb" name="Datos" fill="#2563eb" radius={[4,4,0,0]} />
-                      <Bar dataKey="voz_min" name="Voz (min)" fill="#16a34a" radius={[4,4,0,0]} />
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={drillBarData} margin={{ top: 10, right: 20, bottom: 56, left: 10 }} barCategoryGap="20%">
+                                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="name" angle={-35} textAnchor="end" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} interval={0} />
+                      <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} tickFormatter={v => `${v} MB`} axisLine={false} tickLine={false} />
+                      <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--border)', opacity: 0.4 }} />
+                      <Legend wrapperStyle={{ paddingTop: 16 }} iconType="circle" iconSize={10} />
+                      <Bar dataKey="datos_mb" name="Datos" fill="#3b82f6" radius={[6,6,0,0]} animationDuration={800} />
+                      <Bar dataKey="voz_min" name="Voz (min)" fill="#22c55e" radius={[6,6,0,0]} animationDuration={800} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -383,27 +406,23 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                     </div>
                     {multiBranch && <span className="text-muted text-sm">Haz clic en una barra para ver el detalle</span>}
                   </div>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={barData} margin={{ top: 5, right: 20, bottom: 56, left: 10 }} style={multiBranch ? { cursor: 'pointer' } : undefined}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f8" />
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={barData} margin={{ top: 10, right: 20, bottom: 56, left: 10 }} barCategoryGap="20%" style={multiBranch ? { cursor: 'pointer' } : undefined}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                       <XAxis
                         dataKey="name"
                         angle={-35}
                         textAnchor="end"
-                        tick={{ fontSize: 12 }}
+                        tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
+                        axisLine={{ stroke: 'var(--border)' }}
+                        tickLine={false}
                         interval={0}
                       />
-                      <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${v} MB`} />
-                      <Tooltip
-                        formatter={(val, name) =>
-                          name === 'datos_mb'
-                            ? [formatData(val), 'Datos']
-                            : [`${val} min`, 'Voz']
-                        }
-                      />
-                      <Legend wrapperStyle={{ paddingTop: 16 }} />
-                      <Bar dataKey="datos_mb" name="Datos"     fill="#2563eb" radius={[4,4,0,0]} onClick={handleBarClick} />
-                      <Bar dataKey="voz_min"  name="Voz (min)" fill="#16a34a" radius={[4,4,0,0]} onClick={handleBarClick} />
+                      <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} tickFormatter={v => `${v} MB`} axisLine={false} tickLine={false} />
+                      <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--border)', opacity: 0.4 }} />
+                      <Legend wrapperStyle={{ paddingTop: 16 }} iconType="circle" iconSize={10} />
+                      <Bar dataKey="datos_mb" name="Datos" fill="#3b82f6" radius={[6,6,0,0]} onClick={handleBarClick} animationDuration={800} />
+                      <Bar dataKey="voz_min" name="Voz (min)" fill="#22c55e" radius={[6,6,0,0]} onClick={handleBarClick} animationDuration={800} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -545,47 +564,53 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
             </div>
           ) : (
             <>
-              {/* Line chart — Datos */}
+              {/* Area chart — Datos */}
               <div className="chart-card">
                 <div className="chart-title">Evolución de Consumo de Datos (MB)</div>
-                <ResponsiveContainer width="100%" height={250}>
-                  <LineChart data={historical} margin={{ top: 5, right: 20, bottom: 40, left: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f8" />
-                    <XAxis dataKey="label" angle={-35} textAnchor="end" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${v} MB`} />
-                    <Tooltip formatter={val => [formatData(val), 'Datos']} />
-                    <Line
+                <ResponsiveContainer width="100%" height={260}>
+                  <AreaChart data={historical} margin={{ top: 10, right: 20, bottom: 40, left: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="label" angle={-35} textAnchor="end" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} tickFormatter={v => `${v} MB`} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area
                       type="monotone"
                       dataKey="datos_mb"
                       name="Datos"
-                      stroke="#2563eb"
+                      stroke="#3b82f6"
                       strokeWidth={2.5}
-                      dot={{ r: 5, fill: '#2563eb' }}
-                      activeDot={{ r: 7 }}
+                      fill="#3b82f6"
+                      fillOpacity={0.15}
+                      dot={{ r: 4, fill: '#fff', stroke: '#3b82f6', strokeWidth: 2 }}
+                      activeDot={{ r: 6, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }}
+                      animationDuration={1000}
                     />
-                  </LineChart>
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
 
-              {/* Line chart — Voz */}
+              {/* Area chart — Voz */}
               <div className="chart-card">
                 <div className="chart-title">Evolución de Consumo de Voz (min)</div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={historical} margin={{ top: 5, right: 20, bottom: 40, left: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f8" />
-                    <XAxis dataKey="label" angle={-35} textAnchor="end" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip formatter={val => [`${val} min`, 'Voz']} />
-                    <Line
+                <ResponsiveContainer width="100%" height={240}>
+                  <AreaChart data={historical} margin={{ top: 10, right: 20, bottom: 40, left: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="label" angle={-35} textAnchor="end" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area
                       type="monotone"
                       dataKey="voz_min"
                       name="Voz"
-                      stroke="#16a34a"
+                      stroke="#22c55e"
                       strokeWidth={2.5}
-                      dot={{ r: 5, fill: '#16a34a' }}
-                      activeDot={{ r: 7 }}
+                      fill="#22c55e"
+                      fillOpacity={0.15}
+                      dot={{ r: 4, fill: '#fff', stroke: '#22c55e', strokeWidth: 2 }}
+                      activeDot={{ r: 6, fill: '#22c55e', stroke: '#fff', strokeWidth: 2 }}
+                      animationDuration={1000}
                     />
-                  </LineChart>
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
 
