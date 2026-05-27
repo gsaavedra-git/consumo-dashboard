@@ -157,7 +157,7 @@ consumo-dashboard/
 
 - **Row Level Security**: habilitado en todas las tablas. Un viewer no puede ver datos de otra sucursal, ni siquiera directamente contra la API.
 - **Reemplazo de datos**: subir datos de un período ya existente reemplaza los anteriores (no duplica).
-- **Sucursales automáticas**: al subir un Excel, las sucursales nuevas se crean automáticamente a partir del campo "Alias" (se elimina el número final: "Alto Bio Bio 1" → "Alto Bio Bio").
+- **Sucursales automáticas**: al subir un Excel, las sucursales se crean a partir de la columna "Sucursal". Si no existe, se deriva del campo "Alias" como fallback.
 - **Multi-branch**: un usuario viewer puede tener múltiples sucursales asignadas vía la tabla `user_branches`.
 - **Logos de sucursal**: se pueden subir desde la sección Sucursales. Se almacenan en el bucket `branch-logos` de Supabase Storage.
 - **Keep-alive**: un GitHub Action hace ping periódico a Supabase para evitar que el proyecto free-tier entre en pausa.

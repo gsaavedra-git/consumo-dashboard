@@ -40,7 +40,6 @@ CREATE TABLE public.consumption_lines (
 CREATE TABLE public.profiles (
   id            UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   role          TEXT NOT NULL CHECK (role IN ('admin', 'viewer')) DEFAULT 'viewer',
-  branch_id     UUID REFERENCES public.branches(id),
   display_name  TEXT
 );
 

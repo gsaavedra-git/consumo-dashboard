@@ -28,10 +28,11 @@ export function parseSMS(str) {
   return match ? parseInt(match[1]) : 0
 }
 
-// "Alto Bio Bio 1" → "Alto Bio Bio" | "" → "Sin Sucursal"
-export function extractBranch(alias) {
-  if (!alias || String(alias).trim() === '') return 'Sin Sucursal'
-  return String(alias).replace(/\s+\d+$/, '').trim()
+// Columna Sucursal directa del Excel, fallback a alias sin número final
+export function extractBranch(sucursal, alias) {
+  if (sucursal && String(sucursal).trim() !== '') return String(sucursal).trim()
+  if (alias && String(alias).trim() !== '') return String(alias).replace(/\s+\d+$/, '').trim()
+  return 'Sin Sucursal'
 }
 
 // MB → string legible: "1.51 GB" / "512 MB" / "0 KB"
@@ -60,8 +61,8 @@ export function parseExcelFile(file) {
         }
 
         const parsed = rows.map((row) => {
-          // Tolerante a variaciones de nombre de columna
-          const alias = row['Alias'] ?? row['alias'] ?? row['ALIAS'] ?? ''
+          const alias    = row['Alias']    ?? row['alias']    ?? row['ALIAS']    ?? ''
+          const sucursal = row['Sucursal'] ?? row['sucursal'] ?? row['SUCURSAL'] ?? ''
           return {
             linea:       String(row['Linea']       ?? row['linea']       ?? row['LINEA']       ?? '').trim(),
             alias:       String(alias).trim(),
@@ -70,9 +71,9 @@ export function parseExcelFile(file) {
             datos_mb:    parseTraficoData(row['Trafico Datos'] ?? row['trafico_datos'] ?? row['TRAFICO DATOS'] ?? ''),
             voz_min:     parseVoz(row['Trafico Voz']  ?? row['trafico_voz']  ?? row['TRAFICO VOZ']  ?? ''),
             sms_count:   parseSMS(row['Trafico SMS']  ?? row['trafico_sms']  ?? row['TRAFICO SMS']  ?? ''),
-            branch_name: extractBranch(alias),
+            branch_name: extractBranch(sucursal, alias),
           }
-        }).filter(r => r.linea !== '')  // descartar filas vacías
+        }).filter(r => r.linea !== '')
 
         resolve(parsed)
       } catch (err) {
