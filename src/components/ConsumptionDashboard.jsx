@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase'
 import { formatData, formatNumber } from '../lib/excelParser'
 import { IconWifi, IconPhone, IconMessage, IconActivity, IconArrowLeft, IconCalendar } from './Icons'
 import BranchLogo from './BranchLogo'
+import BranchReport from './BranchReport'
 
 const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
@@ -137,22 +138,29 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
   const [loadingLines, setLoadingLines] = useState(false)
   const [drillBranch, setDrillBranch]   = useState(null)  // { name } for drill-down
   const [prevLinesMap, setPrevLinesMap] = useState({})    // linea → datos_mb del período anterior
+  const [report, setReport]             = useState(null)  // { branchId, name, logoUrl } informe abierto
+  const [loadError, setLoadError]       = useState(null)  // error de carga visible al usuario
+  const [reloadKey, setReloadKey]       = useState(0)     // fuerza recarga al reintentar
+  const [search, setSearch]             = useState('')    // buscador de la tabla de detalle
+  const [sortKey, setSortKey]           = useState('datos_mb')
+  const [sortDir, setSortDir]           = useState('desc')
 
   // ── Load periods ───────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('periods')
         .select('*')
         .order('year', { ascending: false })
         .order('month', { ascending: false })
 
+      if (error) { setLoadError('No se pudieron cargar los períodos: ' + error.message); setLoading(false); return }
       setPeriods(data || [])
       if (data?.length > 0) setSelectedId(data[0].id)
       setLoading(false)
     }
     load()
-  }, [])
+  }, [reloadKey])
 
   // ── Load lines for selected period ────────────────────────────────
   useEffect(() => {
@@ -168,12 +176,13 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
 
       if (!isAdmin && filterIds.length > 0) q = q.in('branch_id', filterIds)
 
-      const { data } = await q
+      const { data, error } = await q
+      if (error) { setLoadError('No se pudieron cargar las líneas: ' + error.message); setLoadingLines(false); return }
       setLines(data || [])
       setLoadingLines(false)
     }
     load()
-  }, [selectedId, isAdmin, filterIds.join(',')])
+  }, [selectedId, isAdmin, filterIds.join(','), reloadKey])
 
   // ── Load historical data ───────────────────────────────────────────
   useEffect(() => {
@@ -184,7 +193,8 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
 
       if (!isAdmin && filterIds.length > 0) q = q.in('branch_id', filterIds)
 
-      const { data } = await q
+      const { data, error } = await q
+      if (error) { setLoadError('No se pudo cargar el histórico: ' + error.message); return }
       if (!data) return
 
       // Agrupar por período (totales), por período × sucursal y por línea (datos)
@@ -231,7 +241,7 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
       setLineHist(lineMap)
     }
     load()
-  }, [isAdmin, filterIds.join(',')])
+  }, [isAdmin, filterIds.join(','), reloadKey])
 
   // ── Período anterior (para variación mes a mes) ───────────────────
   const selectedPeriod = periods.find(p => p.id === selectedId)
@@ -323,19 +333,48 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
     total:  drillLines.length,
   } : null
 
-  // Build a map of branch name → logo_url from lines data
+  // Build maps of branch name → logo_url / branch_id from lines data
   const branchLogoMap = {}
+  const branchIdMap = {}
   lines.forEach(l => {
-    if (l.branches?.name && l.branches?.logo_url) {
-      branchLogoMap[l.branches.name] = l.branches.logo_url
+    if (l.branches?.name) {
+      if (l.branches.logo_url) branchLogoMap[l.branches.name] = l.branches.logo_url
+      if (l.branch_id) branchIdMap[l.branches.name] = l.branch_id
     }
   })
 
   function handleBarClick(data) {
     if (multiBranch && !drillBranch && data?.name) {
-      setDrillBranch({ name: data.name, logoUrl: branchLogoMap[data.name] || null })
+      setDrillBranch({ name: data.name, logoUrl: branchLogoMap[data.name] || null, branchId: branchIdMap[data.name] || null })
     }
   }
+
+  // Contexto de sucursal única para "Generar Informe" (viewer de 1 sucursal)
+  const singleBranchCtx = (!isAdmin && filterIds.length === 1 && lines.length > 0)
+    ? { branchId: filterIds[0], name: branchName, logoUrl: lines[0]?.branches?.logo_url || null }
+    : null
+
+  // ── Buscar / ordenar la tabla de detalle ──────────────────────────
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(key); setSortDir(key === 'alias' || key === 'linea' ? 'asc' : 'desc') }
+  }
+  const sortArrow = key => (sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '')
+  const displayLines = (() => {
+    const term = search.trim().toLowerCase()
+    const arr = term
+      ? lines.filter(l => (l.linea || '').toLowerCase().includes(term) || (l.alias || '').toLowerCase().includes(term))
+      : [...lines]
+    const dir = sortDir === 'asc' ? 1 : -1
+    return arr.sort((a, b) => {
+      if (sortKey === 'alias' || sortKey === 'linea') {
+        const av = (a[sortKey] || '').toString().toLowerCase()
+        const bv = (b[sortKey] || '').toString().toLowerCase()
+        return av < bv ? -dir : av > bv ? dir : 0
+      }
+      return ((a[sortKey] || 0) - (b[sortKey] || 0)) * dir
+    })
+  })()
 
   if (loading) return (
     <div className="empty-state"><div className="empty-icon">⏳</div>Cargando...</div>
@@ -343,6 +382,28 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
 
   return (
     <div>
+      {report && (
+        <BranchReport
+          branchId={report.branchId}
+          name={report.name}
+          logoUrl={report.logoUrl}
+          periodId={selectedId}
+          onClose={() => setReport(null)}
+        />
+      )}
+
+      {loadError && (
+        <div className="alert alert-error" style={{ justifyContent: 'space-between' }}>
+          <span>⚠️ {loadError}</span>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => { setLoadError(null); setReloadKey(k => k + 1) }}
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
       {/* ── Header ──────────────────────────────────────── */}
       <div className="flex-between mb-4">
         <div>
@@ -350,6 +411,11 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
           <div className="page-subtitle">Resumen de consumo de líneas móviles corporativas</div>
         </div>
         <div className="flex gap-2">
+          {singleBranchCtx && view === 'period' && (
+            <button className="btn btn-secondary" onClick={() => setReport(singleBranchCtx)}>
+              📄 Generar Informe
+            </button>
+          )}
           <button
             className={`btn ${view === 'period' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setView('period')}
@@ -439,6 +505,15 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                 <BranchLogo name={drillBranch.name} logoUrl={drillBranch.logoUrl} size={32} />
                 <span className="fw-600" style={{ fontSize: 16 }}>{drillBranch.name}</span>
                 <span className="text-muted text-sm">({drillKpis.total} líneas)</span>
+                {drillBranch.branchId && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ marginLeft: 'auto' }}
+                    onClick={() => setReport({ branchId: drillBranch.branchId, name: drillBranch.name, logoUrl: drillBranch.logoUrl })}
+                  >
+                    📄 Generar Informe
+                  </button>
+                )}
               </div>
 
               <div className="kpi-grid">
@@ -600,22 +675,37 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                   </div>
                 ) : (
                   <>
+                    {/* Buscar / ordenar */}
+                    <div className="table-toolbar no-print">
+                      <input
+                        className="table-search"
+                        type="search"
+                        placeholder="Buscar por número o alias…"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                      />
+                      <span className="text-muted text-sm">{displayLines.length} de {lines.length}</span>
+                    </div>
+                    {displayLines.length === 0 ? (
+                      <div className="empty-state" style={{ padding: 24 }}>Sin resultados para “{search}”.</div>
+                    ) : (
+                    <>
                     {/* Desktop table */}
                     <div className="table-wrap">
                       <table>
                         <thead>
                           <tr>
-                            <th>Línea</th>
-                            <th>Alias</th>
+                            <th className="sortable" onClick={() => toggleSort('linea')}>Línea{sortArrow('linea')}</th>
+                            <th className="sortable" onClick={() => toggleSort('alias')}>Alias{sortArrow('alias')}</th>
                             {multiBranch && <th>Sucursal</th>}
                             <th>Plan</th>
-                            <th>Datos</th>
-                            <th>Voz</th>
-                            <th>SMS</th>
+                            <th className="sortable" onClick={() => toggleSort('datos_mb')}>Datos{sortArrow('datos_mb')}</th>
+                            <th className="sortable" onClick={() => toggleSort('voz_min')}>Voz{sortArrow('voz_min')}</th>
+                            <th className="sortable" onClick={() => toggleSort('sms_count')}>SMS{sortArrow('sms_count')}</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {lines.map(l => (
+                          {displayLines.map(l => (
                             <tr key={l.id}>
                               <td className="mono">{l.linea}</td>
                               <td>{l.alias || <span className="text-muted">—</span>}</td>
@@ -645,7 +735,7 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                     </div>
                     {/* Mobile card list */}
                     <div className="mobile-card-list">
-                      {lines.map(l => (
+                      {displayLines.map(l => (
                         <div className="mobile-card-item" key={l.id}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                             <div>
@@ -676,6 +766,8 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                         </div>
                       ))}
                     </div>
+                    </>
+                    )}
                   </>
                 )}
               </div>

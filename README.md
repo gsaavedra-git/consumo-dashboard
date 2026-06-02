@@ -162,6 +162,18 @@ consumo-dashboard/
 - **Validación de carga**: antes de confirmar, la vista previa advierte sobre celdas no interpretables (contadas como 0), líneas duplicadas, columnas faltantes y filas sin número de línea.
 - **Variación mes a mes**: los KPIs del período muestran el cambio % vs el período anterior, la tabla de detalle resalta líneas con saltos anómalos de datos (⚠), y el resumen histórico incluye una columna de variación.
 - **Histórico por sucursal / por línea**: en la vista histórica, el gráfico de datos permite alternar entre Total, Por Sucursal (una línea por sucursal) y Por Línea (selector para ver la evolución de una línea/alias específica).
+- **Informe por sucursal**: botón "Generar Informe" (en el drill-down y para viewers de una sucursal) que abre una vista imprimible con KPIs, variación, gráfico por línea, evolución histórica y tendencia por línea. Se guarda como PDF desde el diálogo de impresión del navegador.
+- **Buscar / ordenar**: la tabla de detalle tiene buscador por número/alias y columnas ordenables.
+- **Manejo de errores**: si una consulta falla, el dashboard muestra un aviso con botón "Reintentar" en vez de quedar vacío.
+
+## Tests
+
+```bash
+npm test         # corre la suite (Vitest)
+npm run test:watch
+```
+
+La lógica de parsing de Excel (`src/lib/excelParser.js`) está cubierta por `excelParser.test.js`: normalización de separadores es-CL/US, enteros con miles, detección de columnas faltantes, duplicados y filas inválidas.
 - **Sucursales automáticas**: al subir un Excel, las sucursales se crean a partir de la columna "Sucursal". Si no existe, se deriva del campo "Alias" como fallback.
 - **Multi-branch**: un usuario viewer puede tener múltiples sucursales asignadas vía la tabla `user_branches`.
 - **Logos de sucursal**: se pueden subir desde la sección Sucursales. Se almacenan en el bucket `branch-logos` de Supabase Storage.

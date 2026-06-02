@@ -684,3 +684,114 @@ tr:hover td { background: var(--bg); }
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* ── Informe por sucursal (BranchReport) ───── */
+.report-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 1000;
+  overflow-y: auto;
+}
+.report-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.report-page {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 28px 32px 48px;
+  background: var(--surface);
+  min-height: 100%;
+}
+.report-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 18px;
+  margin-bottom: 22px;
+  border-bottom: 2px solid var(--border);
+}
+.report-title { font-size: 24px; font-weight: 700; color: var(--text); margin: 0; }
+.report-subtitle { font-size: 14px; color: var(--text-muted); margin-top: 2px; }
+.report-meta { font-size: 12px; color: var(--text-muted); text-align: right; }
+.report-block { margin-bottom: 22px; }
+.report-kpis { margin-bottom: 22px; }
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.report-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.report-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: middle;
+}
+.report-footer {
+  margin-top: 28px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ── Buscar / ordenar tabla ────────────────── */
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.table-search {
+  flex: 1;
+  max-width: 320px;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  transition: var(--transition);
+}
+.table-search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--primary-50);
+}
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+th.sortable:hover { color: var(--text); }
+
+/* ── Impresión ─────────────────────────────── */
+@media print {
+  @page { margin: 12mm; }
+  #root { display: none !important; }
+  .no-print { display: none !important; }
+  .report-overlay { position: static; overflow: visible; background: #fff; }
+  .report-page { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+  .kpi-card, .chart-card, .card { box-shadow: none !important; break-inside: avoid; }
+  .report-table tr { break-inside: avoid; }
+  .report-block { break-inside: avoid-page; }
+}

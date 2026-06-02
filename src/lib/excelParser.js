@@ -95,6 +95,62 @@ const COLUMNS = {
   sms:    ['Trafico SMS', 'trafico_sms', 'TRAFICO SMS', 'Tráfico SMS'],
 }
 
+// Normaliza las filas crudas de la hoja (salida de sheet_to_json) a
+// { rows, stats }. Función pura: testeable sin FileReader ni XLSX.
+export function normalizeRows(sheetRows) {
+  // Detectar columnas esenciales ausentes (a partir de las claves reales).
+  const headerKeys = new Set(Object.keys(sheetRows[0] || {}))
+  const missingColumns = []
+  if (!COLUMNS.linea.some(n => headerKeys.has(n))) missingColumns.push('Linea')
+  if (!COLUMNS.datos.some(n => headerKeys.has(n))) missingColumns.push('Trafico Datos')
+
+  const stats = {
+    sheetRows: sheetRows.length,
+    parsed: 0,
+    skippedNoLinea: 0,
+    dataUnparsed: 0,   // celdas de datos con contenido no interpretable → contadas como 0
+    vozUnparsed: 0,
+    smsUnparsed: 0,
+    duplicateLineas: 0,
+    missingColumns,
+  }
+
+  const seen = new Set()
+  const rows = []
+
+  for (const row of sheetRows) {
+    const linea = String(pick(row, COLUMNS.linea)).trim()
+    if (linea === '') { stats.skippedNoLinea++; continue }
+
+    const rawDatos = pick(row, COLUMNS.datos)
+    const rawVoz   = pick(row, COLUMNS.voz)
+    const rawSms   = pick(row, COLUMNS.sms)
+
+    if (isUnparsedData(rawDatos))    stats.dataUnparsed++
+    if (isUnparsedInteger(rawVoz))   stats.vozUnparsed++
+    if (isUnparsedInteger(rawSms))   stats.smsUnparsed++
+    if (seen.has(linea))             stats.duplicateLineas++
+    seen.add(linea)
+
+    const alias    = String(pick(row, COLUMNS.alias)).trim()
+    const sucursal = pick(row, COLUMNS.suc)
+
+    rows.push({
+      linea,
+      alias,
+      plan:        String(pick(row, COLUMNS.plan)).trim(),
+      desc_plan:   String(pick(row, COLUMNS.dplan)).trim(),
+      datos_mb:    parseTraficoData(rawDatos),
+      voz_min:     parseVoz(rawVoz),
+      sms_count:   parseSMS(rawSms),
+      branch_name: extractBranch(sucursal, alias),
+    })
+  }
+
+  stats.parsed = rows.length
+  return { rows, stats }
+}
+
 // Lee el archivo .xlsx y retorna { rows, stats }.
 // `rows`  → filas normalizadas listas para insertar.
 // `stats` → resumen de calidad para advertir al usuario antes de confirmar.
@@ -114,57 +170,7 @@ export function parseExcelFile(file) {
           return
         }
 
-        // Detectar columnas esenciales ausentes (a partir de las claves reales).
-        const headerKeys = new Set(Object.keys(sheetRows[0]))
-        const missingColumns = []
-        if (!COLUMNS.linea.some(n => headerKeys.has(n))) missingColumns.push('Linea')
-        if (!COLUMNS.datos.some(n => headerKeys.has(n))) missingColumns.push('Trafico Datos')
-
-        const stats = {
-          sheetRows: sheetRows.length,
-          parsed: 0,
-          skippedNoLinea: 0,
-          dataUnparsed: 0,   // celdas de datos con contenido no interpretable → contadas como 0
-          vozUnparsed: 0,
-          smsUnparsed: 0,
-          duplicateLineas: 0,
-          missingColumns,
-        }
-
-        const seen = new Set()
-        const rows = []
-
-        for (const row of sheetRows) {
-          const linea = String(pick(row, COLUMNS.linea)).trim()
-          if (linea === '') { stats.skippedNoLinea++; continue }
-
-          const rawDatos = pick(row, COLUMNS.datos)
-          const rawVoz   = pick(row, COLUMNS.voz)
-          const rawSms   = pick(row, COLUMNS.sms)
-
-          if (isUnparsedData(rawDatos))    stats.dataUnparsed++
-          if (isUnparsedInteger(rawVoz))   stats.vozUnparsed++
-          if (isUnparsedInteger(rawSms))   stats.smsUnparsed++
-          if (seen.has(linea))             stats.duplicateLineas++
-          seen.add(linea)
-
-          const alias    = String(pick(row, COLUMNS.alias)).trim()
-          const sucursal = pick(row, COLUMNS.suc)
-
-          rows.push({
-            linea,
-            alias,
-            plan:        String(pick(row, COLUMNS.plan)).trim(),
-            desc_plan:   String(pick(row, COLUMNS.dplan)).trim(),
-            datos_mb:    parseTraficoData(rawDatos),
-            voz_min:     parseVoz(rawVoz),
-            sms_count:   parseSMS(rawSms),
-            branch_name: extractBranch(sucursal, alias),
-          })
-        }
-
-        stats.parsed = rows.length
-        resolve({ rows, stats })
+        resolve(normalizeRows(sheetRows))
       } catch (err) {
         reject(new Error('Error al leer el archivo: ' + err.message))
       }
