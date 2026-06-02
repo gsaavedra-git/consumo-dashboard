@@ -409,6 +409,16 @@ tr:hover td { background: var(--bg); }
 .alert-success { background: var(--success-light); border: 1px solid #a7f3d0; color: #065f46; }
 .alert-error   { background: var(--danger-light); border: 1px solid #fecaca; color: #991b1b; }
 .alert-info    { background: var(--primary-light); border: 1px solid #bfdbfe; color: #1e40af; }
+.alert-warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; display: block; }
+
+/* ── KPI delta (variación mes a mes) ───────── */
+.kpi-delta {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 6px;
+}
 
 /* ── Badge ────────────────────────────────── */
 .badge {

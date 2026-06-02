@@ -3,10 +3,11 @@ import {
   ResponsiveContainer,
   BarChart, Bar,
   AreaChart, Area,
+  LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
 import { supabase } from '../lib/supabase'
-import { formatData } from '../lib/excelParser'
+import { formatData, formatNumber } from '../lib/excelParser'
 import { IconWifi, IconPhone, IconMessage, IconActivity, IconArrowLeft, IconCalendar } from './Icons'
 import BranchLogo from './BranchLogo'
 
@@ -28,10 +29,92 @@ function CustomTooltip({ active, payload, label }) {
           <span style={{ width: 10, height: 10, borderRadius: '50%', background: p.color, display: 'inline-block' }} />
           <span style={{ color: 'var(--text-muted)' }}>{p.name}:</span>
           <span style={{ fontWeight: 600, color: 'var(--text)' }}>
-            {p.dataKey === 'datos_mb' ? formatData(p.value) : p.dataKey === 'voz_min' ? `${p.value} min` : p.value}
+            {p.dataKey === 'datos_mb' ? formatData(p.value) : p.dataKey === 'voz_min' ? `${formatNumber(p.value)} min` : formatNumber(p.value)}
           </span>
         </div>
       ))}
+    </div>
+  )
+}
+
+
+// Tooltip para series cuyos valores son tráfico de datos (MB) — formatea con formatData
+function DataTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  const sorted = [...payload].sort((a, b) => b.value - a.value)
+  return (
+    <div style={{
+      background: 'var(--surface)', border: '1px solid var(--border)',
+      borderRadius: 10, padding: '10px 14px', boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
+      fontSize: 13,
+    }}>
+      <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>{label}</div>
+      {sorted.map((p, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: p.color, display: 'inline-block' }} />
+          <span style={{ color: 'var(--text-muted)' }}>{p.name}:</span>
+          <span style={{ fontWeight: 600, color: 'var(--text)' }}>{formatData(p.value)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+
+// ── Variación mes a mes ──────────────────────────────────────────────
+// % de cambio respecto al período anterior. null = sin dato anterior;
+// Infinity = no existía antes y ahora sí (línea/consumo nuevo).
+function pctChange(curr, prev) {
+  if (prev == null) return null
+  if (prev === 0) return curr > 0 ? Infinity : 0
+  return ((curr - prev) / prev) * 100
+}
+
+// ¿Salto anómalo de datos? Duplica el consumo y sube ≥1 GB, o aparece de cero
+// con ≥1 GB. Filtra el ruido de variaciones pequeñas.
+function isDataSpike(curr, prev) {
+  if (prev == null) return false
+  if (prev === 0) return curr >= 1024
+  return curr >= prev * 2 && (curr - prev) >= 1024
+}
+
+// Delta bajo el valor de una KPI: "▲ 12% vs Abr 2026"
+function KpiDelta({ curr, prev, prevLabel }) {
+  const pct = pctChange(curr, prev)
+  if (pct == null || !isFinite(pct)) return null
+  const up = pct >= 0
+  return (
+    <div className="kpi-delta" style={{ color: up ? 'var(--warning)' : 'var(--success)' }}>
+      {up ? '▲' : '▼'} {Math.abs(pct).toFixed(0)}%
+      <span className="text-muted" style={{ fontWeight: 400 }}>&nbsp;vs {prevLabel}</span>
+    </div>
+  )
+}
+
+// Badge de % con flecha para la tabla histórica.
+function PctBadge({ pct }) {
+  if (pct == null || !isFinite(pct)) return <span className="text-muted">—</span>
+  const up = pct >= 0
+  return (
+    <span style={{ color: up ? 'var(--warning)' : 'var(--success)', fontWeight: 600 }}>
+      {up ? '▲' : '▼'} {Math.abs(pct).toFixed(0)}%
+    </span>
+  )
+}
+
+// Delta compacto de datos por línea (en la tabla de detalle). Oculta cambios
+// menores a ±10% para no saturar; resalta anomalías en rojo con ⚠.
+function DataDelta({ curr, prev }) {
+  const pct = pctChange(curr, prev)
+  if (pct == null) return null
+  const spike = isDataSpike(curr, prev)
+  const isNew = !isFinite(pct)
+  if (!spike && !isNew && Math.abs(pct) < 10) return null
+  const up = pct >= 0
+  const color = spike ? 'var(--danger)' : up ? 'var(--warning)' : 'var(--success)'
+  return (
+    <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2, color }}>
+      {spike && '⚠ '}{up ? '▲' : '▼'} {isNew ? 'nuevo' : `${Math.abs(pct).toFixed(0)}%`}
     </div>
   )
 }
@@ -45,9 +128,15 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
   const [selectedId, setSelectedId]   = useState(null)
   const [lines, setLines]             = useState([])
   const [historical, setHistorical]   = useState([])
+  const [histBranchSeries, setHistBranchSeries] = useState([])  // por período × sucursal
+  const [branchNames, setBranchNames] = useState([])
+  const [lineHist, setLineHist]       = useState({})        // linea → { linea, alias, total, periods:{key:mb} }
+  const [selectedLine, setSelectedLine] = useState(null)    // linea seleccionada en modo 'line'
+  const [histMode, setHistMode]       = useState('total')   // 'total' | 'branch' | 'line'
   const [loading, setLoading]         = useState(true)
   const [loadingLines, setLoadingLines] = useState(false)
   const [drillBranch, setDrillBranch]   = useState(null)  // { name } for drill-down
+  const [prevLinesMap, setPrevLinesMap] = useState({})    // linea → datos_mb del período anterior
 
   // ── Load periods ───────────────────────────────────────────────────
   useEffect(() => {
@@ -91,43 +180,111 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
     async function load() {
       let q = supabase
         .from('consumption_lines')
-        .select('datos_mb, voz_min, sms_count, periods(year, month), branches(name, logo_url)')
+        .select('datos_mb, voz_min, sms_count, linea, alias, periods(year, month), branches(name, logo_url)')
 
       if (!isAdmin && filterIds.length > 0) q = q.in('branch_id', filterIds)
 
       const { data } = await q
       if (!data) return
 
-      // Agrupar por período
+      // Agrupar por período (totales), por período × sucursal y por línea (datos)
       const map = {}
+      const branchMap = {}
+      const namesSet = new Set()
+      const lineMap = {}
       data.forEach(l => {
         if (!l.periods) return
         const key = `${l.periods.year}-${String(l.periods.month).padStart(2,'0')}`
+        const label = `${MONTHS[l.periods.month - 1]} ${l.periods.year}`
         if (!map[key]) {
-          map[key] = {
-            key,
-            label: `${MONTHS[l.periods.month - 1]} ${l.periods.year}`,
-            datos_mb: 0, voz_min: 0, sms_count: 0
-          }
+          map[key] = { key, label, datos_mb: 0, voz_min: 0, sms_count: 0 }
         }
         map[key].datos_mb  += l.datos_mb  || 0
         map[key].voz_min   += l.voz_min   || 0
         map[key].sms_count += l.sms_count || 0
+
+        const bname = l.branches?.name || 'Sin Sucursal'
+        namesSet.add(bname)
+        if (!branchMap[key]) branchMap[key] = { key, label }
+        branchMap[key][bname] = (branchMap[key][bname] || 0) + (l.datos_mb || 0)
+
+        if (l.linea) {
+          if (!lineMap[l.linea]) lineMap[l.linea] = { linea: l.linea, alias: l.alias || '', total: 0, periods: {} }
+          lineMap[l.linea].periods[key] = (lineMap[l.linea].periods[key] || 0) + (l.datos_mb || 0)
+          lineMap[l.linea].total += l.datos_mb || 0
+          if (!lineMap[l.linea].alias && l.alias) lineMap[l.linea].alias = l.alias
+        }
       })
 
+      const names = [...namesSet]
+      // Rellenar con 0 las sucursales ausentes en cada período (líneas continuas)
+      const series = Object.values(branchMap)
+        .sort((a, b) => a.key.localeCompare(b.key))
+        .map(p => {
+          names.forEach(n => { if (p[n] == null) p[n] = 0 })
+          return p
+        })
+
       setHistorical(Object.values(map).sort((a, b) => a.key.localeCompare(b.key)))
+      setHistBranchSeries(series)
+      setBranchNames(names)
+      setLineHist(lineMap)
     }
     load()
   }, [isAdmin, filterIds.join(',')])
+
+  // ── Período anterior (para variación mes a mes) ───────────────────
+  const selectedPeriod = periods.find(p => p.id === selectedId)
+  const selKey = selectedPeriod ? `${selectedPeriod.year}-${String(selectedPeriod.month).padStart(2,'0')}` : null
+  const histIdx = selKey ? historical.findIndex(h => h.key === selKey) : -1
+  const prevHist = histIdx > 0 ? historical[histIdx - 1] : null
+
+  // Cargar líneas del período anterior para comparar línea por línea
+  useEffect(() => {
+    if (!prevHist) { setPrevLinesMap({}); return }
+    const prevPeriod = periods.find(
+      p => `${p.year}-${String(p.month).padStart(2,'0')}` === prevHist.key
+    )
+    if (!prevPeriod) { setPrevLinesMap({}); return }
+
+    async function load() {
+      let q = supabase
+        .from('consumption_lines')
+        .select('linea, datos_mb, branch_id')
+        .eq('period_id', prevPeriod.id)
+      if (!isAdmin && filterIds.length > 0) q = q.in('branch_id', filterIds)
+      const { data } = await q
+      const m = {}
+      ;(data || []).forEach(l => { m[l.linea] = (m[l.linea] || 0) + (l.datos_mb || 0) })
+      setPrevLinesMap(m)
+    }
+    load()
+  }, [prevHist?.key, isAdmin, filterIds.join(',')])
 
   // ── Derived KPIs ───────────────────────────────────────────────────
   const totalDatos  = lines.reduce((s, l) => s + (l.datos_mb  || 0), 0)
   const totalVoz    = lines.reduce((s, l) => s + (l.voz_min   || 0), 0)
   const totalSMS    = lines.reduce((s, l) => s + (l.sms_count || 0), 0)
-  const activeLines = lines.filter(l => l.datos_mb > 0 || l.voz_min > 0).length
+  const activeLines = lines.filter(l => l.datos_mb > 0 || l.voz_min > 0 || l.sms_count > 0).length
 
   // Show branch-level view when admin OR viewer with multiple branches
   const multiBranch = isAdmin || filterIds.length > 1
+
+  // Variación de datos de cada período histórico vs el anterior (key → %)
+  const histDeltaMap = {}
+  historical.forEach((h, i) => {
+    histDeltaMap[h.key] = i > 0 ? pctChange(h.datos_mb, historical[i - 1].datos_mb) : null
+  })
+
+  // Histórico por línea: opciones (ordenadas por consumo total) y serie del seleccionado
+  const lineOptions = Object.values(lineHist).sort((a, b) => b.total - a.total)
+  const effectiveLine = (selectedLine && lineHist[selectedLine]) ? selectedLine : (lineOptions[0]?.linea || null)
+  const lineLabel = effectiveLine
+    ? (lineHist[effectiveLine].alias ? `${lineHist[effectiveLine].alias} · ${effectiveLine}` : effectiveLine)
+    : ''
+  const lineSeries = effectiveLine
+    ? historical.map(h => ({ label: h.label, datos_mb: lineHist[effectiveLine].periods[h.key] || 0 }))
+    : []
 
   // ── Bar chart: by branch (multi) or by line alias (single branch) ──
   const barData = multiBranch
@@ -162,7 +319,7 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
     datos: drillLines.reduce((s, l) => s + (l.datos_mb || 0), 0),
     voz:   drillLines.reduce((s, l) => s + (l.voz_min || 0), 0),
     sms:   drillLines.reduce((s, l) => s + (l.sms_count || 0), 0),
-    active: drillLines.filter(l => l.datos_mb > 0 || l.voz_min > 0).length,
+    active: drillLines.filter(l => l.datos_mb > 0 || l.voz_min > 0 || l.sms_count > 0).length,
     total:  drillLines.length,
   } : null
 
@@ -179,8 +336,6 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
       setDrillBranch({ name: data.name, logoUrl: branchLogoMap[data.name] || null })
     }
   }
-
-  const selectedPeriod = periods.find(p => p.id === selectedId)
 
   if (loading) return (
     <div className="empty-state"><div className="empty-icon">⏳</div>Cargando...</div>
@@ -244,20 +399,23 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                 <div className="kpi-icon blue"><IconWifi size={20} /></div>
               </div>
               <div className="kpi-value">{formatData(totalDatos)}</div>
+              <KpiDelta curr={totalDatos} prev={prevHist?.datos_mb} prevLabel={prevHist?.label} />
             </div>
             <div className="kpi-card green">
               <div className="kpi-header">
                 <div className="kpi-label">Total Voz</div>
                 <div className="kpi-icon green"><IconPhone size={20} /></div>
               </div>
-              <div className="kpi-value">{totalVoz}<span className="kpi-unit">min</span></div>
+              <div className="kpi-value">{formatNumber(totalVoz)}<span className="kpi-unit">min</span></div>
+              <KpiDelta curr={totalVoz} prev={prevHist?.voz_min} prevLabel={prevHist?.label} />
             </div>
             <div className="kpi-card orange">
               <div className="kpi-header">
                 <div className="kpi-label">Total SMS</div>
                 <div className="kpi-icon orange"><IconMessage size={20} /></div>
               </div>
-              <div className="kpi-value">{totalSMS}</div>
+              <div className="kpi-value">{formatNumber(totalSMS)}</div>
+              <KpiDelta curr={totalSMS} prev={prevHist?.sms_count} prevLabel={prevHist?.label} />
             </div>
             <div className="kpi-card purple">
               <div className="kpi-header">
@@ -296,14 +454,14 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                     <div className="kpi-label">Voz</div>
                     <div className="kpi-icon green"><IconPhone size={20} /></div>
                   </div>
-                  <div className="kpi-value">{drillKpis.voz}<span className="kpi-unit">min</span></div>
+                  <div className="kpi-value">{formatNumber(drillKpis.voz)}<span className="kpi-unit">min</span></div>
                 </div>
                 <div className="kpi-card orange">
                   <div className="kpi-header">
                     <div className="kpi-label">SMS</div>
                     <div className="kpi-icon orange"><IconMessage size={20} /></div>
                   </div>
-                  <div className="kpi-value">{drillKpis.sms}</div>
+                  <div className="kpi-value">{formatNumber(drillKpis.sms)}</div>
                 </div>
                 <div className="kpi-card purple">
                   <div className="kpi-header">
@@ -321,7 +479,7 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                     <BarChart data={drillBarData} margin={{ top: 10, right: 20, bottom: 56, left: 10 }} barCategoryGap="20%">
                                             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                       <XAxis dataKey="name" angle={-35} textAnchor="end" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} interval={0} />
-                      <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} tickFormatter={v => `${v} MB`} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} tickFormatter={v => (v ? formatData(v) : '0')} axisLine={false} tickLine={false} />
                       <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--border)', opacity: 0.4 }} />
                       <Legend wrapperStyle={{ paddingTop: 16 }} iconType="circle" iconSize={10} />
                       <Bar dataKey="datos_mb" name="Datos" fill="#3b82f6" radius={[6,6,0,0]} animationDuration={800} />
@@ -353,12 +511,13 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                           <td className="text-muted text-sm">{l.desc_plan}</td>
                           <td style={{ fontWeight: l.datos_mb > 0 ? 600 : 400, color: l.datos_mb > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
                             {formatData(l.datos_mb)}
+                            <DataDelta curr={l.datos_mb} prev={prevLinesMap[l.linea]} />
                           </td>
                           <td style={{ color: l.voz_min > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
-                            {l.voz_min > 0 ? `${l.voz_min} min` : '0'}
+                            {l.voz_min > 0 ? `${formatNumber(l.voz_min)} min` : '0'}
                           </td>
                           <td style={{ color: l.sms_count > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
-                            {l.sms_count}
+                            {formatNumber(l.sms_count)}
                           </td>
                         </tr>
                       ))}
@@ -376,15 +535,15 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, background: 'var(--bg)', borderRadius: 8, padding: '10px 12px' }}>
                         <div style={{ textAlign: 'center' }}>
                           <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Datos</div>
-                          <div style={{ fontSize: 15, fontWeight: 600, color: l.datos_mb > 0 ? 'var(--primary)' : 'var(--text-muted)' }}>{formatData(l.datos_mb)}</div>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: l.datos_mb > 0 ? 'var(--primary)' : 'var(--text-muted)' }}>{formatData(l.datos_mb)}<DataDelta curr={l.datos_mb} prev={prevLinesMap[l.linea]} /></div>
                         </div>
                         <div style={{ textAlign: 'center' }}>
                           <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Voz</div>
-                          <div style={{ fontSize: 15, fontWeight: 600, color: l.voz_min > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{l.voz_min > 0 ? `${l.voz_min}m` : '0'}</div>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: l.voz_min > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{l.voz_min > 0 ? `${formatNumber(l.voz_min)}m` : '0'}</div>
                         </div>
                         <div style={{ textAlign: 'center' }}>
                           <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>SMS</div>
-                          <div style={{ fontSize: 15, fontWeight: 600, color: l.sms_count > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>{l.sms_count}</div>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: l.sms_count > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>{formatNumber(l.sms_count)}</div>
                         </div>
                       </div>
                     </div>
@@ -418,7 +577,7 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                         tickLine={false}
                         interval={0}
                       />
-                      <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} tickFormatter={v => `${v} MB`} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} tickFormatter={v => (v ? formatData(v) : '0')} axisLine={false} tickLine={false} />
                       <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--border)', opacity: 0.4 }} />
                       <Legend wrapperStyle={{ paddingTop: 16 }} iconType="circle" iconSize={10} />
                       <Bar dataKey="datos_mb" name="Datos" fill="#3b82f6" radius={[6,6,0,0]} onClick={handleBarClick} animationDuration={800} />
@@ -471,12 +630,13 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                               <td className="text-muted text-sm">{l.desc_plan}</td>
                               <td style={{ fontWeight: l.datos_mb > 0 ? 600 : 400, color: l.datos_mb > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
                                 {formatData(l.datos_mb)}
+                                <DataDelta curr={l.datos_mb} prev={prevLinesMap[l.linea]} />
                               </td>
                               <td style={{ color: l.voz_min > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
-                                {l.voz_min > 0 ? `${l.voz_min} min` : '0'}
+                                {l.voz_min > 0 ? `${formatNumber(l.voz_min)} min` : '0'}
                               </td>
                               <td style={{ color: l.sms_count > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
-                                {l.sms_count}
+                                {formatNumber(l.sms_count)}
                               </td>
                             </tr>
                           ))}
@@ -502,15 +662,15 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, background: 'var(--bg)', borderRadius: 8, padding: '10px 12px' }}>
                             <div style={{ textAlign: 'center' }}>
                               <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Datos</div>
-                              <div style={{ fontSize: 15, fontWeight: 600, color: l.datos_mb > 0 ? 'var(--primary)' : 'var(--text-muted)' }}>{formatData(l.datos_mb)}</div>
+                              <div style={{ fontSize: 15, fontWeight: 600, color: l.datos_mb > 0 ? 'var(--primary)' : 'var(--text-muted)' }}>{formatData(l.datos_mb)}<DataDelta curr={l.datos_mb} prev={prevLinesMap[l.linea]} /></div>
                             </div>
                             <div style={{ textAlign: 'center' }}>
                               <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Voz</div>
-                              <div style={{ fontSize: 15, fontWeight: 600, color: l.voz_min > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{l.voz_min > 0 ? `${l.voz_min}m` : '0'}</div>
+                              <div style={{ fontSize: 15, fontWeight: 600, color: l.voz_min > 0 ? 'var(--success)' : 'var(--text-muted)' }}>{l.voz_min > 0 ? `${formatNumber(l.voz_min)}m` : '0'}</div>
                             </div>
                             <div style={{ textAlign: 'center' }}>
                               <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>SMS</div>
-                              <div style={{ fontSize: 15, fontWeight: 600, color: l.sms_count > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>{l.sms_count}</div>
+                              <div style={{ fontSize: 15, fontWeight: 600, color: l.sms_count > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>{formatNumber(l.sms_count)}</div>
                             </div>
                           </div>
                         </div>
@@ -551,7 +711,7 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                 <div className="kpi-icon orange"><IconPhone size={20} /></div>
               </div>
               <div className="kpi-value">
-                {historical.reduce((s, d) => s + d.voz_min, 0)}
+                {formatNumber(historical.reduce((s, d) => s + d.voz_min, 0))}
                 <span className="kpi-unit">min</span>
               </div>
             </div>
@@ -564,28 +724,109 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
             </div>
           ) : (
             <>
-              {/* Area chart — Datos */}
+              {/* Area/Line chart — Datos */}
               <div className="chart-card">
-                <div className="chart-title">Evolución de Consumo de Datos (MB)</div>
+                <div className="flex-between">
+                  <div className="chart-title">Evolución de Consumo de Datos</div>
+                  <div className="flex gap-2">
+                    <button
+                      className={`btn btn-sm ${histMode === 'total' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setHistMode('total')}
+                    >
+                      Total
+                    </button>
+                    {multiBranch && branchNames.length > 1 && (
+                      <button
+                        className={`btn btn-sm ${histMode === 'branch' ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setHistMode('branch')}
+                      >
+                        Por Sucursal
+                      </button>
+                    )}
+                    {lineOptions.length > 0 && (
+                      <button
+                        className={`btn btn-sm ${histMode === 'line' ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setHistMode('line')}
+                      >
+                        Por Línea
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {histMode === 'line' && lineOptions.length > 0 && (
+                  <div className="period-bar" style={{ marginTop: 12 }}>
+                    <label>Línea:</label>
+                    <select value={effectiveLine || ''} onChange={e => setSelectedLine(e.target.value)}>
+                      {lineOptions.map(o => (
+                        <option key={o.linea} value={o.linea}>
+                          {o.alias ? `${o.alias} · ${o.linea}` : o.linea} — {formatData(o.total)} acum.
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <ResponsiveContainer width="100%" height={260}>
-                  <AreaChart data={historical} margin={{ top: 10, right: 20, bottom: 40, left: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="label" angle={-35} textAnchor="end" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
-                    <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} tickFormatter={v => `${v} MB`} axisLine={false} tickLine={false} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Area
-                      type="monotone"
-                      dataKey="datos_mb"
-                      name="Datos"
-                      stroke="#3b82f6"
-                      strokeWidth={2.5}
-                      fill="#3b82f6"
-                      fillOpacity={0.15}
-                      dot={{ r: 4, fill: '#fff', stroke: '#3b82f6', strokeWidth: 2 }}
-                      activeDot={{ r: 6, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }}
-                      animationDuration={1000}
-                    />
-                  </AreaChart>
+                  {histMode === 'branch' && multiBranch ? (
+                    <LineChart data={histBranchSeries} margin={{ top: 10, right: 20, bottom: 40, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="label" angle={-35} textAnchor="end" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
+                      <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} tickFormatter={v => (v ? formatData(v) : '0')} axisLine={false} tickLine={false} />
+                      <Tooltip content={<DataTooltip />} />
+                      <Legend wrapperStyle={{ paddingTop: 16 }} iconType="circle" iconSize={10} />
+                      {branchNames.map((name, i) => (
+                        <Line
+                          key={name}
+                          type="monotone"
+                          dataKey={name}
+                          name={name}
+                          stroke={COLORS[i % COLORS.length]}
+                          strokeWidth={2.5}
+                          dot={{ r: 3 }}
+                          activeDot={{ r: 5 }}
+                          animationDuration={800}
+                        />
+                      ))}
+                    </LineChart>
+                  ) : histMode === 'line' && effectiveLine ? (
+                    <AreaChart data={lineSeries} margin={{ top: 10, right: 20, bottom: 40, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="label" angle={-35} textAnchor="end" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
+                      <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} tickFormatter={v => (v ? formatData(v) : '0')} axisLine={false} tickLine={false} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Area
+                        type="monotone"
+                        dataKey="datos_mb"
+                        name={lineLabel}
+                        stroke="#7c3aed"
+                        strokeWidth={2.5}
+                        fill="#7c3aed"
+                        fillOpacity={0.15}
+                        dot={{ r: 4, fill: '#fff', stroke: '#7c3aed', strokeWidth: 2 }}
+                        activeDot={{ r: 6, fill: '#7c3aed', stroke: '#fff', strokeWidth: 2 }}
+                        animationDuration={1000}
+                      />
+                    </AreaChart>
+                  ) : (
+                    <AreaChart data={historical} margin={{ top: 10, right: 20, bottom: 40, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="label" angle={-35} textAnchor="end" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border)' }} tickLine={false} />
+                      <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} tickFormatter={v => (v ? formatData(v) : '0')} axisLine={false} tickLine={false} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Area
+                        type="monotone"
+                        dataKey="datos_mb"
+                        name="Datos"
+                        stroke="#3b82f6"
+                        strokeWidth={2.5}
+                        fill="#3b82f6"
+                        fillOpacity={0.15}
+                        dot={{ r: 4, fill: '#fff', stroke: '#3b82f6', strokeWidth: 2 }}
+                        activeDot={{ r: 6, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }}
+                        animationDuration={1000}
+                      />
+                    </AreaChart>
+                  )}
                 </ResponsiveContainer>
               </div>
 
@@ -623,6 +864,7 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                       <tr>
                         <th>Período</th>
                         <th>Total Datos</th>
+                        <th>Variación</th>
                         <th>Total Voz</th>
                         <th>Total SMS</th>
                       </tr>
@@ -632,8 +874,9 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                         <tr key={d.key}>
                           <td className="fw-600">{d.label}</td>
                           <td>{formatData(d.datos_mb)}</td>
-                          <td>{d.voz_min} min</td>
-                          <td>{d.sms_count}</td>
+                          <td><PctBadge pct={histDeltaMap[d.key]} /></td>
+                          <td>{formatNumber(d.voz_min)} min</td>
+                          <td>{formatNumber(d.sms_count)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -651,11 +894,11 @@ export default function ConsumptionDashboard({ isAdmin, branchIds = [], branchId
                         </div>
                         <div style={{ textAlign: 'center' }}>
                           <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Voz</div>
-                          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--success)' }}>{d.voz_min}m</div>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--success)' }}>{formatNumber(d.voz_min)}m</div>
                         </div>
                         <div style={{ textAlign: 'center' }}>
                           <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>SMS</div>
-                          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--warning)' }}>{d.sms_count}</div>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--warning)' }}>{formatNumber(d.sms_count)}</div>
                         </div>
                       </div>
                     </div>

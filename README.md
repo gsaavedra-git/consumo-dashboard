@@ -31,6 +31,8 @@ supabase/schema.sql
 
 Esto crea las tablas, las políticas RLS y los índices.
 
+Luego ejecuta también, en orden, los archivos de `supabase/migrations/` (`002_…`, `003_…`, `004_…`). El `004_atomic_upload.sql` crea la función `replace_period_lines`, que hace la carga mensual de forma transaccional (si falla a mitad, no deja el período corrupto).
+
 ### 2b. Supabase — Crear bucket de logos
 
 En el Dashboard → **Storage** → "New bucket":
@@ -156,7 +158,10 @@ consumo-dashboard/
 ## Notas importantes
 
 - **Row Level Security**: habilitado en todas las tablas. Un viewer no puede ver datos de otra sucursal, ni siquiera directamente contra la API.
-- **Reemplazo de datos**: subir datos de un período ya existente reemplaza los anteriores (no duplica).
+- **Reemplazo de datos**: subir datos de un período ya existente reemplaza los anteriores (no duplica). El reemplazo es atómico vía la función `replace_period_lines` (migración 004).
+- **Validación de carga**: antes de confirmar, la vista previa advierte sobre celdas no interpretables (contadas como 0), líneas duplicadas, columnas faltantes y filas sin número de línea.
+- **Variación mes a mes**: los KPIs del período muestran el cambio % vs el período anterior, la tabla de detalle resalta líneas con saltos anómalos de datos (⚠), y el resumen histórico incluye una columna de variación.
+- **Histórico por sucursal / por línea**: en la vista histórica, el gráfico de datos permite alternar entre Total, Por Sucursal (una línea por sucursal) y Por Línea (selector para ver la evolución de una línea/alias específica).
 - **Sucursales automáticas**: al subir un Excel, las sucursales se crean a partir de la columna "Sucursal". Si no existe, se deriva del campo "Alias" como fallback.
 - **Multi-branch**: un usuario viewer puede tener múltiples sucursales asignadas vía la tabla `user_branches`.
 - **Logos de sucursal**: se pueden subir desde la sección Sucursales. Se almacenan en el bucket `branch-logos` de Supabase Storage.

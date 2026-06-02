@@ -13,6 +13,7 @@ export default function UploadExcel() {
   const [dragover, setDragover]       = useState(false)
   const [file, setFile]               = useState(null)
   const [preview, setPreview]         = useState(null)   // rows parsed
+  const [stats, setStats]             = useState(null)   // calidad del parseo
   const [selectedYear, setYear]       = useState(now.getFullYear())
   const [selectedMonth, setMonth]     = useState(now.getMonth() + 1)
   const [uploading, setUploading]     = useState(false)
@@ -31,12 +32,19 @@ export default function UploadExcel() {
     setMessage(null)
     setFile(f)
     try {
-      const rows = await parseExcelFile(f)
+      const { rows, stats } = await parseExcelFile(f)
+      if (rows.length === 0) {
+        setMessage({ type: 'error', text: 'No se encontraron líneas válidas en el archivo. Verifica que tenga la columna "Linea".' })
+        setFile(null)
+        return
+      }
       setPreview(rows)
+      setStats(stats)
     } catch (e) {
       setMessage({ type: 'error', text: e.message })
       setFile(null)
       setPreview(null)
+      setStats(null)
     }
   }
 
@@ -49,6 +57,7 @@ export default function UploadExcel() {
   function reset() {
     setFile(null)
     setPreview(null)
+    setStats(null)
     setMessage(null)
     if (fileRef.current) fileRef.current.value = ''
   }
@@ -60,30 +69,7 @@ export default function UploadExcel() {
     setMessage(null)
 
     try {
-      // 1. Crear o reutilizar período
-      let periodId
-      const { data: existing } = await supabase
-        .from('periods')
-        .select('id')
-        .eq('year', selectedYear)
-        .eq('month', selectedMonth)
-        .single()
-
-      if (existing) {
-        // Reemplazar: borrar líneas anteriores
-        await supabase.from('consumption_lines').delete().eq('period_id', existing.id)
-        periodId = existing.id
-      } else {
-        const { data: newPeriod, error: pErr } = await supabase
-          .from('periods')
-          .insert({ year: selectedYear, month: selectedMonth })
-          .select()
-          .single()
-        if (pErr) throw pErr
-        periodId = newPeriod.id
-      }
-
-      // 2. Resolver sucursales (get or create)
+      // 1. Resolver sucursales (get or create) — idempotente
       const branchNames = [...new Set(preview.map(r => r.branch_name))]
       const branchMap = {}
 
@@ -101,9 +87,9 @@ export default function UploadExcel() {
         }
       }
 
-      // 3. Insertar líneas en lotes de 200
-      const rows = preview.map(r => ({
-        period_id: periodId,
+      // 2. Reemplazo atómico (período + líneas) vía función Postgres.
+      //    Si algo falla, no queda un período a medio cargar.
+      const lineRows = preview.map(r => ({
         branch_id: branchMap[r.branch_name],
         linea:     r.linea,
         alias:     r.alias || null,
@@ -114,23 +100,45 @@ export default function UploadExcel() {
         sms_count: r.sms_count,
       }))
 
-      const BATCH = 200
-      for (let i = 0; i < rows.length; i += BATCH) {
-        const { error } = await supabase
-          .from('consumption_lines')
-          .insert(rows.slice(i, i + BATCH))
-        if (error) throw error
-      }
+      const { data: inserted, error: rpcErr } = await supabase.rpc('replace_period_lines', {
+        p_year:  selectedYear,
+        p_month: selectedMonth,
+        p_lines: lineRows,
+      })
+      if (rpcErr) throw rpcErr
 
       setMessage({
         type: 'success',
-        text: `✅ ${rows.length} líneas cargadas para ${MONTHS[selectedMonth - 1]} ${selectedYear}. ${branchNames.length} sucursal(es) procesadas.`
+        text: `✅ ${inserted} líneas cargadas para ${MONTHS[selectedMonth - 1]} ${selectedYear}. ${branchNames.length} sucursal(es) procesadas.`
       })
       reset()
     } catch (err) {
       setMessage({ type: 'error', text: 'Error al cargar: ' + err.message })
     } finally {
       setUploading(false)
+    }
+  }
+
+  // ── Data-quality warnings from parse stats ───────────────────────
+  const warnings = []
+  if (stats) {
+    if (stats.missingColumns.length > 0) {
+      warnings.push(`Columnas no encontradas: ${stats.missingColumns.join(', ')}. ¿Es el reporte correcto?`)
+    }
+    if (stats.dataUnparsed > 0) {
+      warnings.push(`${stats.dataUnparsed} celda(s) de Datos no se pudieron interpretar y se contarán como 0. Revisa el formato del Excel.`)
+    }
+    if (stats.vozUnparsed > 0) {
+      warnings.push(`${stats.vozUnparsed} celda(s) de Voz no se pudieron interpretar y se contarán como 0.`)
+    }
+    if (stats.smsUnparsed > 0) {
+      warnings.push(`${stats.smsUnparsed} celda(s) de SMS no se pudieron interpretar y se contarán como 0.`)
+    }
+    if (stats.duplicateLineas > 0) {
+      warnings.push(`${stats.duplicateLineas} línea(s) duplicada(s) en el archivo. Pueden duplicar el consumo.`)
+    }
+    if (stats.skippedNoLinea > 0) {
+      warnings.push(`${stats.skippedNoLinea} fila(s) omitida(s) por no tener número de línea.`)
     }
   }
 
@@ -223,6 +231,16 @@ export default function UploadExcel() {
               Cambiar archivo
             </button>
           </div>
+
+          {/* Data-quality warnings */}
+          {warnings.length > 0 && (
+            <div className="alert alert-warning" style={{ marginBottom: 16 }}>
+              <div className="fw-600" style={{ marginBottom: 6 }}>⚠️ Revisa la calidad de los datos</div>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                {warnings.map((w, i) => <li key={i} style={{ marginBottom: 2 }}>{w}</li>)}
+              </ul>
+            </div>
+          )}
 
           {/* Branch chips */}
           <div className="mb-4">
